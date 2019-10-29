@@ -1,0 +1,7 @@
+# This file contains additional build requirements that did not get
+# picked up automatically. One name per line, no whitespace.
+hdf5-dev
+zlib-dev
+tk-dev
+glu-dev
+libXmu-dev
