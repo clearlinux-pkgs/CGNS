@@ -1,4 +1,0 @@
-lib.3.4.0
-mesa-dev
-pkgconfig(x11)
-util-linux
