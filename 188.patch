@@ -1,0 +1,2896 @@
+This patch combines all commits from PR 188 (9 commits if you disregard the
+merge commits), with one modification: the changes to
+src/tests/test_complexf.F90 in PATCH 7/9 are dropped, since that file does not
+yet exist in the code (version 4.1.2 as of this writing).
+
+Upstream-Status: Backport
+Reference: https://github.com/CGNS/CGNS/pull/188
+
+
+From 1c83d7e0f0be2625190d8748f2587248b11a5dae Mon Sep 17 00:00:00 2001
+From: Gilles Filippini <pini@debian.org>
+Date: Sun, 24 Nov 2019 19:34:54 +0100
+Subject: [PATCH 1/9] Do not call vararg C functions from Fortran (#179)
+
+* Use optional arguments instread.
+---
+ src/cg_ftoc.c  |  98 ++++++-------
+ src/cgns_f.F90 | 362 +++++++++++++++++++++++++++++++++++++++++++++++--
+ 2 files changed, 386 insertions(+), 74 deletions(-)
+
+diff --git a/src/cg_ftoc.c b/src/cg_ftoc.c
+index 79289759..acd9fb67 100644
+--- a/src/cg_ftoc.c
++++ b/src/cg_ftoc.c
+@@ -2856,11 +2856,8 @@ CGNSDLL void __stdcall cg_goto_f(cgint_f *fn, cgint_f *B, cgint_f *ier, ...)
+ CGNSDLL void FMNAME(cg_goto_f, CG_GOTO_F)(cgint_f *fn, cgint_f *B, cgint_f *ier, ...)
+ #endif
+ {
+-#ifdef _CRAY
+-    _fcd cray_string;
+-#endif
+-    char *f_label[CG_MAX_GOTO_DEPTH], *label[CG_MAX_GOTO_DEPTH];
+-    int index[CG_MAX_GOTO_DEPTH], n, i, len[CG_MAX_GOTO_DEPTH];
++    char *label[CG_MAX_GOTO_DEPTH];
++    int index[CG_MAX_GOTO_DEPTH], n, i;
+     va_list ap;
+ 
+      /* initialize ap to the last parameter before the variable argument list */
+@@ -2870,19 +2867,9 @@ CGNSDLL void FMNAME(cg_goto_f, CG_GOTO_F)(cgint_f *fn, cgint_f *B, cgint_f *ier,
+ 
+      /* read arguments */
+     for (n = 0; n < CG_MAX_GOTO_DEPTH; n++)  {
+-#ifdef _CRAY
+-        cray_string = va_arg(ap, _fcd);
+-        f_label[n] = _fcdtocp(cray_string);
+-        len[n] = _fcdlen(cray_string);
+-#else
+-        f_label[n] = va_arg(ap, char *);
+-# ifdef WIN32_FORTRAN
+-     /* In Windows, the arguments appear in a different order: char*, len, index,...*/
+-        len[n] = (int)va_arg(ap, int);
+-# endif
+-#endif
+-        if (f_label[n][0] == ' ' || 0 == strncmp(f_label[n],"end",3) ||
+-            0 == strncmp(f_label[n],"END",3)) break;
++        label[n] = va_arg(ap, char *);
++        if (label[n][0] == ' ' || 0 == strncmp(label[n],"end",3) ||
++            0 == strncmp(label[n],"END",3)) break;
+ 
+         index[n] = (int)*(va_arg(ap, cgint_f *));
+         if (index[n] < 0) {
+@@ -2892,19 +2879,8 @@ CGNSDLL void FMNAME(cg_goto_f, CG_GOTO_F)(cgint_f *fn, cgint_f *B, cgint_f *ier,
+         }
+     }
+ 
+-#if !defined(_CRAY) && !defined(WIN32_FORTRAN)
+-    for (i=0; i<n; i++) {
+-      len[i] = va_arg(ap, int);
+-    }
+-#endif
+     va_end(ap);
+ 
+-     /* convert strings to C-strings */
+-    for (i=0; i < n; i++) {
+-        label[i] = CGNS_NEW(char,len[i]+1);
+-        string_2_C_string(f_label[i], len[i], label[i], len[i], ier);
+-    }
+-
+ #if DEBUG_GOTO
+     printf("\nIn cg_ftoc.c: narguments=%d\n",n);
+     for (i=0; i<n; i++) printf("\targ %d: '%s' #%d\n",i,label[i], index[i]);
+@@ -2912,7 +2888,6 @@ CGNSDLL void FMNAME(cg_goto_f, CG_GOTO_F)(cgint_f *fn, cgint_f *B, cgint_f *ier,
+ 
+     *ier = (cgint_f)cgi_set_posit((int)*fn, (int)*B, n, index, label);
+ 
+-    for (i=0; i<n; i++) CGNS_FREE(label[i]);
+     return;
+ }
+ 
+@@ -2924,11 +2899,8 @@ CGNSDLL void __stdcall cg_gorel_f(cgint_f *fn, cgint_f *ier, ...)
+ CGNSDLL void FMNAME(cg_gorel_f, CG_GOREL_F)(cgint_f *fn, cgint_f *ier, ...)
+ #endif
+ {
+-#ifdef _CRAY
+-    _fcd cray_string;
+-#endif
+-    char *f_label[CG_MAX_GOTO_DEPTH], *label[CG_MAX_GOTO_DEPTH];
+-    int index[CG_MAX_GOTO_DEPTH], n, i, len[CG_MAX_GOTO_DEPTH];
++    char *label[CG_MAX_GOTO_DEPTH];
++    int index[CG_MAX_GOTO_DEPTH], n, i;
+     va_list ap;
+ 
+     if (posit == 0) {
+@@ -2949,19 +2921,9 @@ CGNSDLL void FMNAME(cg_gorel_f, CG_GOREL_F)(cgint_f *fn, cgint_f *ier, ...)
+ 
+      /* read arguments */
+     for (n = 0; n < CG_MAX_GOTO_DEPTH; n++)  {
+-#ifdef _CRAY
+-        cray_string = va_arg(ap, _fcd);
+-        f_label[n] = _fcdtocp(cray_string);
+-        len[n] = _fcdlen(cray_string);
+-#else
+-        f_label[n] = va_arg(ap, char *);
+-# ifdef WIN32_FORTRAN
+-     /* In Windows, the arguments appear in a different order: char*, len, index,...*/
+-        len[n] = va_arg(ap, int);
+-# endif
+-#endif
+-        if (f_label[n][0] == ' ' || 0 == strncmp(f_label[n],"end",3) ||
+-            0 == strncmp(f_label[n],"END",3)) break;
++        label[n] = va_arg(ap, char *);
++        if (label[n][0] == ' ' || 0 == strncmp(label[n],"end",3) ||
++            0 == strncmp(label[n],"END",3)) break;
+ 
+         index[n] = (int)*(va_arg(ap, cgint_f *));
+         if (index[n] < 0) {
+@@ -2971,19 +2933,8 @@ CGNSDLL void FMNAME(cg_gorel_f, CG_GOREL_F)(cgint_f *fn, cgint_f *ier, ...)
+         }
+     }
+ 
+-#if !defined(_CRAY) && !defined(WIN32_FORTRAN)
+-    for (i=0; i<n; i++) {
+-        len[i] = va_arg(ap, int);
+-    }
+-#endif
+     va_end(ap);
+ 
+-     /* convert strings to C-strings */
+-    for (i=0; i < n; i++) {
+-        label[i] = CGNS_NEW(char,len[i]+1);
+-        string_2_C_string(f_label[i], len[i], label[i], len[i], ier);
+-    }
+-
+ #if DEBUG_GOTO
+     printf("\nIn cg_ftoc.c: narguments=%d\n",n);
+     for (i=0; i<n; i++) printf("\targ %d: '%s' #%d\n",i,label[i], index[i]);
+@@ -2991,10 +2942,37 @@ CGNSDLL void FMNAME(cg_gorel_f, CG_GOREL_F)(cgint_f *fn, cgint_f *ier, ...)
+ 
+     *ier = (cgint_f)cgi_update_posit(n, index, label);
+ 
+-    for (i=0; i<n; i++) CGNS_FREE(label[i]);
+     return;
+ }
+ 
++CGNSDLL void FMNAME(cg_goto_f1, CG_GOTO_F1)(cgint_f *fn, cgint_f *B, cgint_f *ier, STR_PSTR(name), cgint_f *index STR_PLEN(name))
++{
++    int length;
++    char *c_name;
++
++    length = (int) STR_LEN(name);
++    c_name = CGNS_NEW(char, length+1);
++
++    string_2_C_string(STR_PTR(name), STR_LEN(name), c_name, length, ier);
++    if (*ier == 0)
++        FMNAME(cg_goto_f, CG_GOTO_F)(fn, B, ier, c_name, index, "end");
++    CGNS_FREE(c_name);
++}
++
++CGNSDLL void FMNAME(cg_gorel_f1, CG_GOREL_F1)(cgint_f *fn, cgint_f *ier, STR_PSTR(name), cgint_f *index STR_PLEN(name))
++{
++    int length;
++    char *c_name;
++
++    length = (int) STR_LEN(name);
++    c_name = CGNS_NEW(char, length+1);
++
++    string_2_C_string(STR_PTR(name), STR_LEN(name), c_name, length, ier);
++    if (*ier == 0)
++        FMNAME(cg_gorel_f, CG_GOREL_F)(fn, ier, c_name, index, "end");
++    CGNS_FREE(c_name);
++}
++
+ /*-----------------------------------------------------------------------*/
+ 
+ CGNSDLL void FMNAME(cg_gopath_f, CG_GOPATH_F) (cgint_f *fn,
+diff --git a/src/cgns_f.F90 b/src/cgns_f.F90
+index 7c34f01e..2aabc642 100644
+--- a/src/cgns_f.F90
++++ b/src/cgns_f.F90
+@@ -3239,20 +3239,29 @@ END SUBROUTINE cg_ptset_info_f
+   !      Go - To Function                                                 *
+   ! - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ 
+-!!$     INTERFACE
+-!!$           SUBROUTINE cg_goto_f, CG_GOTO_F)(cgint_f *fn, cgint_f *B, ier, ...)
+-!!$cgint_f *fn, cgint_f *B, ier, ...)
+-!!$
+-!!$          INTEGER, INTENT(OUT) :: ier
+-!!$           END SUBROUTINE
+-!!$        END INTERFACE
+-!!$
+-!!$     INTERFACE
+-!!$           SUBROUTINE cg_gorel_f, CG_GOREL_F)(cgint_f *fn, ier, ...)
+-!!$cgint_f *fn, ier, ...)
+-!!$          INTEGER, INTENT(OUT) :: ier
+-!!$           END SUBROUTINE
+-!!$        END INTERFACE
++  INTERFACE
++     SUBROUTINE cg_goto_f1(fn, B, ier, &
++                     name1, index1)
++       IMPORT :: c_char
++       IMPLICIT NONE
++       INTEGER :: fn
++       INTEGER :: B
++       INTEGER, INTENT(OUT) :: ier
++       CHARACTER(KIND=C_CHAR), DIMENSION(*) :: name1
++       INTEGER :: index1
++     END SUBROUTINE
++  END INTERFACE
++  INTERFACE
++     SUBROUTINE cg_gorel_f1(fn, ier, &
++                     name1, index1)
++       IMPORT :: c_char
++       IMPLICIT NONE
++       INTEGER :: fn
++       INTEGER, INTENT(OUT) :: ier
++       CHARACTER(KIND=C_CHAR), DIMENSION(*) :: name1
++       INTEGER :: index1
++     END SUBROUTINE
++  END INTERFACE
+ 
+   INTERFACE
+      SUBROUTINE cg_gopath_f(fn,path, ier) !BIND(C, NAME="cg_gopath_f")
+@@ -5046,6 +5055,331 @@ END SUBROUTINE cgio_set_label_f
+ 
+ CONTAINS
+ 
++  SUBROUTINE cg_goto_f(fn, B, ier, &
++                  name1, index1,  &
++                  name2, index2,  &
++                  name3, index3,  &
++                  name4, index4,  &
++                  name5, index5,  &
++                  name6, index6,  &
++                  name7, index7,  &
++                  name8, index8,  &
++                  name9, index9,  &
++                  name10, index10,  &
++                  name11, index11,  &
++                  name12, index12,  &
++                  name13, index13,  &
++                  name14, index14,  &
++                  name15, index15,  &
++                  name16, index16,  &
++                  name17, index17,  &
++                  name18, index18,  &
++                  name19, index19,  &
++                  name20)
++     IMPLICIT NONE
++     INTEGER :: fn
++     INTEGER :: B
++     INTEGER, INTENT(OUT) :: ier
++     CHARACTER(*) :: name1
++     INTEGER, OPTIONAL :: index1
++     CHARACTER(*), OPTIONAL :: name2
++     INTEGER, OPTIONAL :: index2
++     CHARACTER(*), OPTIONAL :: name3
++     INTEGER, OPTIONAL :: index3
++     CHARACTER(*), OPTIONAL :: name4
++     INTEGER, OPTIONAL :: index4
++     CHARACTER(*), OPTIONAL :: name5
++     INTEGER, OPTIONAL :: index5
++     CHARACTER(*), OPTIONAL :: name6
++     INTEGER, OPTIONAL :: index6
++     CHARACTER(*), OPTIONAL :: name7
++     INTEGER, OPTIONAL :: index7
++     CHARACTER(*), OPTIONAL :: name8
++     INTEGER, OPTIONAL :: index8
++     CHARACTER(*), OPTIONAL :: name9
++     INTEGER, OPTIONAL :: index9
++     CHARACTER(*), OPTIONAL :: name10
++     INTEGER, OPTIONAL :: index10
++     CHARACTER(*), OPTIONAL :: name11
++     INTEGER, OPTIONAL :: index11
++     CHARACTER(*), OPTIONAL :: name12
++     INTEGER, OPTIONAL :: index12
++     CHARACTER(*), OPTIONAL :: name13
++     INTEGER, OPTIONAL :: index13
++     CHARACTER(*), OPTIONAL :: name14
++     INTEGER, OPTIONAL :: index14
++     CHARACTER(*), OPTIONAL :: name15
++     INTEGER, OPTIONAL :: index15
++     CHARACTER(*), OPTIONAL :: name16
++     INTEGER, OPTIONAL :: index16
++     CHARACTER(*), OPTIONAL :: name17
++     INTEGER, OPTIONAL :: index17
++     CHARACTER(*), OPTIONAL :: name18
++     INTEGER, OPTIONAL :: index18
++     CHARACTER(*), OPTIONAL :: name19
++     INTEGER, OPTIONAL :: index19
++     CHARACTER(*), OPTIONAL :: name20
++
++     IF (.NOT. PRESENT(index1)) THEN
++        CALL cg_goto_f1(fn, B, ier, name1, 0)
++        RETURN
++     ELSE
++        CALL cg_goto_f1(fn, B, ier, name1, index1)
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index2))) THEN
++        CALL cg_gorel_f1(fn, ier, name2, index2)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index3))) THEN
++        CALL cg_gorel_f1(fn, ier, name3, index3)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index4))) THEN
++        CALL cg_gorel_f1(fn, ier, name4, index4)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index5))) THEN
++        CALL cg_gorel_f1(fn, ier, name5, index5)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index6))) THEN
++        CALL cg_gorel_f1(fn, ier, name6, index6)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index7))) THEN
++        CALL cg_gorel_f1(fn, ier, name7, index7)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index8))) THEN
++        CALL cg_gorel_f1(fn, ier, name8, index8)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index9))) THEN
++        CALL cg_gorel_f1(fn, ier, name9, index9)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index10))) THEN
++        CALL cg_gorel_f1(fn, ier, name10, index10)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index11))) THEN
++        CALL cg_gorel_f1(fn, ier, name11, index11)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index12))) THEN
++        CALL cg_gorel_f1(fn, ier, name12, index12)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index13))) THEN
++        CALL cg_gorel_f1(fn, ier, name13, index13)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index14))) THEN
++        CALL cg_gorel_f1(fn, ier, name14, index14)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index15))) THEN
++        CALL cg_gorel_f1(fn, ier, name15, index15)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index16))) THEN
++        CALL cg_gorel_f1(fn, ier, name16, index16)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index17))) THEN
++        CALL cg_gorel_f1(fn, ier, name17, index17)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index18))) THEN
++        CALL cg_gorel_f1(fn, ier, name18, index18)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index19))) THEN
++        CALL cg_gorel_f1(fn, ier, name19, index19)
++     ELSE
++        RETURN
++     END IF
++  END SUBROUTINE
++
++  SUBROUTINE cg_gorel_f(fn, ier, &
++                  name1, index1,  &
++                  name2, index2,  &
++                  name3, index3,  &
++                  name4, index4,  &
++                  name5, index5,  &
++                  name6, index6,  &
++                  name7, index7,  &
++                  name8, index8,  &
++                  name9, index9,  &
++                  name10, index10,  &
++                  name11, index11,  &
++                  name12, index12,  &
++                  name13, index13,  &
++                  name14, index14,  &
++                  name15, index15,  &
++                  name16, index16,  &
++                  name17, index17,  &
++                  name18, index18,  &
++                  name19, index19,  &
++                  name20)
++     IMPLICIT NONE
++     INTEGER :: fn
++     INTEGER, INTENT(OUT) :: ier
++     CHARACTER(*) :: name1
++     INTEGER, OPTIONAL :: index1
++     CHARACTER(*), OPTIONAL :: name2
++     INTEGER, OPTIONAL :: index2
++     CHARACTER(*), OPTIONAL :: name3
++     INTEGER, OPTIONAL :: index3
++     CHARACTER(*), OPTIONAL :: name4
++     INTEGER, OPTIONAL :: index4
++     CHARACTER(*), OPTIONAL :: name5
++     INTEGER, OPTIONAL :: index5
++     CHARACTER(*), OPTIONAL :: name6
++     INTEGER, OPTIONAL :: index6
++     CHARACTER(*), OPTIONAL :: name7
++     INTEGER, OPTIONAL :: index7
++     CHARACTER(*), OPTIONAL :: name8
++     INTEGER, OPTIONAL :: index8
++     CHARACTER(*), OPTIONAL :: name9
++     INTEGER, OPTIONAL :: index9
++     CHARACTER(*), OPTIONAL :: name10
++     INTEGER, OPTIONAL :: index10
++     CHARACTER(*), OPTIONAL :: name11
++     INTEGER, OPTIONAL :: index11
++     CHARACTER(*), OPTIONAL :: name12
++     INTEGER, OPTIONAL :: index12
++     CHARACTER(*), OPTIONAL :: name13
++     INTEGER, OPTIONAL :: index13
++     CHARACTER(*), OPTIONAL :: name14
++     INTEGER, OPTIONAL :: index14
++     CHARACTER(*), OPTIONAL :: name15
++     INTEGER, OPTIONAL :: index15
++     CHARACTER(*), OPTIONAL :: name16
++     INTEGER, OPTIONAL :: index16
++     CHARACTER(*), OPTIONAL :: name17
++     INTEGER, OPTIONAL :: index17
++     CHARACTER(*), OPTIONAL :: name18
++     INTEGER, OPTIONAL :: index18
++     CHARACTER(*), OPTIONAL :: name19
++     INTEGER, OPTIONAL :: index19
++     CHARACTER(*), OPTIONAL :: name20
++
++     IF (.NOT. PRESENT(index1)) THEN
++        CALL cg_gorel_f1(fn, ier, name1, 0)
++        RETURN
++     ELSE
++        CALL cg_gorel_f1(fn, ier, name1, index1)
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index2))) THEN
++        CALL cg_gorel_f1(fn, ier, name2, index2)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index3))) THEN
++        CALL cg_gorel_f1(fn, ier, name3, index3)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index4))) THEN
++        CALL cg_gorel_f1(fn, ier, name4, index4)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index5))) THEN
++        CALL cg_gorel_f1(fn, ier, name5, index5)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index6))) THEN
++        CALL cg_gorel_f1(fn, ier, name6, index6)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index7))) THEN
++        CALL cg_gorel_f1(fn, ier, name7, index7)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index8))) THEN
++        CALL cg_gorel_f1(fn, ier, name8, index8)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index9))) THEN
++        CALL cg_gorel_f1(fn, ier, name9, index9)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index10))) THEN
++        CALL cg_gorel_f1(fn, ier, name10, index10)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index11))) THEN
++        CALL cg_gorel_f1(fn, ier, name11, index11)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index12))) THEN
++        CALL cg_gorel_f1(fn, ier, name12, index12)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index13))) THEN
++        CALL cg_gorel_f1(fn, ier, name13, index13)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index14))) THEN
++        CALL cg_gorel_f1(fn, ier, name14, index14)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index15))) THEN
++        CALL cg_gorel_f1(fn, ier, name15, index15)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index16))) THEN
++        CALL cg_gorel_f1(fn, ier, name16, index16)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index17))) THEN
++        CALL cg_gorel_f1(fn, ier, name17, index17)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index18))) THEN
++        CALL cg_gorel_f1(fn, ier, name18, index18)
++     ELSE
++        RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(index19))) THEN
++        CALL cg_gorel_f1(fn, ier, name19, index19)
++     ELSE
++        RETURN
++     END IF
++  END SUBROUTINE
++
+   FUNCTION cg_get_type_c_int(a)
+     USE ISO_C_BINDING
+     INTEGER(C_INT) :: a
+
+From bf77463ef91171759b77fc0073d93e7df5c40cc1 Mon Sep 17 00:00:00 2001
+From: MicK7 <mickey.phy@gmail.com>
+Date: Thu, 19 Mar 2020 21:26:32 +0100
+Subject: [PATCH 2/9] comment unlink
+
+---
+ src/tests/test_family_treef.F90 | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/tests/test_family_treef.F90 b/src/tests/test_family_treef.F90
+index dfb253ba..76ec339a 100644
+--- a/src/tests/test_family_treef.F90
++++ b/src/tests/test_family_treef.F90
+@@ -32,7 +32,7 @@ program testfamilytreef
+ ! ----  WRITING TESTS  ----
+ 
+       outfile = "family_tree_f90.cgns"
+-      call unlink( outfile )
++      ! call unlink( outfile )
+       ! write(*, *) 'Create file'
+       call cg_open_f(outfile, CG_MODE_WRITE, cgfile, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+
+From a795fda06184b5cecc1e4a9d1376ee92b51f8382 Mon Sep 17 00:00:00 2001
+From: MicK7 <mickey.phy@gmail.com>
+Date: Thu, 30 Apr 2020 18:06:05 +0200
+Subject: [PATCH 3/9] keep legacy cg_goto_f_ and cg_gorel_f_ functions
+
+---
+ src/cg_ftoc.c | 142 +++++++++++++++++++++++++++++++++++++++++---------
+ 1 file changed, 118 insertions(+), 24 deletions(-)
+
+diff --git a/src/cg_ftoc.c b/src/cg_ftoc.c
+index acd9fb67..63f579ee 100644
+--- a/src/cg_ftoc.c
++++ b/src/cg_ftoc.c
+@@ -2856,8 +2856,11 @@ CGNSDLL void __stdcall cg_goto_f(cgint_f *fn, cgint_f *B, cgint_f *ier, ...)
+ CGNSDLL void FMNAME(cg_goto_f, CG_GOTO_F)(cgint_f *fn, cgint_f *B, cgint_f *ier, ...)
+ #endif
+ {
+-    char *label[CG_MAX_GOTO_DEPTH];
+-    int index[CG_MAX_GOTO_DEPTH], n, i;
++#ifndef _fcd
++#define _fcd char*
++#endif
++    char *f_label[CG_MAX_GOTO_DEPTH], *label[CG_MAX_GOTO_DEPTH];
++    int index[CG_MAX_GOTO_DEPTH], n, i, len[CG_MAX_GOTO_DEPTH];
+     va_list ap;
+ 
+      /* initialize ap to the last parameter before the variable argument list */
+@@ -2867,9 +2870,16 @@ CGNSDLL void FMNAME(cg_goto_f, CG_GOTO_F)(cgint_f *fn, cgint_f *B, cgint_f *ier,
+ 
+      /* read arguments */
+     for (n = 0; n < CG_MAX_GOTO_DEPTH; n++)  {
+-        label[n] = va_arg(ap, char *);
+-        if (label[n][0] == ' ' || 0 == strncmp(label[n],"end",3) ||
+-            0 == strncmp(label[n],"END",3)) break;
++        f_label[n] = STR_PTR(va_arg(ap, _fcd));
++#ifdef _CRAY
++        len[n] = _fcdlen(cray_string);
++#endif
++# ifdef WIN32_FORTRAN
++     /* In Windows, the arguments appear in order: char*, len, index,...*/
++        len[n] = (int)va_arg(ap, int);
++# endif
++        if (f_label[n][0] == ' ' || 0 == strncmp(f_label[n],"end",3) ||
++            0 == strncmp(f_label[n],"END",3)) break;
+ 
+         index[n] = (int)*(va_arg(ap, cgint_f *));
+         if (index[n] < 0) {
+@@ -2878,9 +2888,19 @@ CGNSDLL void FMNAME(cg_goto_f, CG_GOTO_F)(cgint_f *fn, cgint_f *B, cgint_f *ier,
+             return;
+         }
+     }
+-
++#if !defined(_CRAY) && !defined(WIN32_FORTRAN)
++    for (i=0; i<n; i++) {
++      len[i] = va_arg(ap, int);
++    }
++#endif
+     va_end(ap);
+ 
++     /* convert strings to C-strings */
++    for (i=0; i < n; i++) {
++        label[i] = CGNS_NEW(char,len[i]+1);
++        string_2_C_string(f_label[i], len[i], label[i], len[i], ier);
++    }
++
+ #if DEBUG_GOTO
+     printf("\nIn cg_ftoc.c: narguments=%d\n",n);
+     for (i=0; i<n; i++) printf("\targ %d: '%s' #%d\n",i,label[i], index[i]);
+@@ -2888,6 +2908,7 @@ CGNSDLL void FMNAME(cg_goto_f, CG_GOTO_F)(cgint_f *fn, cgint_f *B, cgint_f *ier,
+ 
+     *ier = (cgint_f)cgi_set_posit((int)*fn, (int)*B, n, index, label);
+ 
++    for (i=0; i<n; i++) CGNS_FREE(label[i]);
+     return;
+ }
+ 
+@@ -2899,8 +2920,12 @@ CGNSDLL void __stdcall cg_gorel_f(cgint_f *fn, cgint_f *ier, ...)
+ CGNSDLL void FMNAME(cg_gorel_f, CG_GOREL_F)(cgint_f *fn, cgint_f *ier, ...)
+ #endif
+ {
+-    char *label[CG_MAX_GOTO_DEPTH];
+-    int index[CG_MAX_GOTO_DEPTH], n, i;
++#ifdef _CRAY
++    _fcd cray_string;
++#endif
++    char *f_label[CG_MAX_GOTO_DEPTH], *label[CG_MAX_GOTO_DEPTH];
++    int index[CG_MAX_GOTO_DEPTH], n, i, len[CG_MAX_GOTO_DEPTH];
++
+     va_list ap;
+ 
+     if (posit == 0) {
+@@ -2921,9 +2946,19 @@ CGNSDLL void FMNAME(cg_gorel_f, CG_GOREL_F)(cgint_f *fn, cgint_f *ier, ...)
+ 
+      /* read arguments */
+     for (n = 0; n < CG_MAX_GOTO_DEPTH; n++)  {
+-        label[n] = va_arg(ap, char *);
+-        if (label[n][0] == ' ' || 0 == strncmp(label[n],"end",3) ||
+-            0 == strncmp(label[n],"END",3)) break;
++#ifdef _CRAY
++        cray_string = va_arg(ap, _fcd);
++        f_label[n] = _fcdtocp(cray_string);
++        len[n] = _fcdlen(cray_string);
++#else
++        f_label[n] = va_arg(ap, char *);
++# ifdef WIN32_FORTRAN
++     /* In Windows, the arguments appear in a different order: char*, len, index,...*/
++        len[n] = va_arg(ap, int);
++# endif
++#endif
++        if (f_label[n][0] == ' ' || 0 == strncmp(f_label[n],"end",3) ||
++            0 == strncmp(f_label[n],"END",3)) break;
+ 
+         index[n] = (int)*(va_arg(ap, cgint_f *));
+         if (index[n] < 0) {
+@@ -2932,9 +2967,19 @@ CGNSDLL void FMNAME(cg_gorel_f, CG_GOREL_F)(cgint_f *fn, cgint_f *ier, ...)
+             return;
+         }
+     }
+-
++#if !defined(_CRAY) && !defined(WIN32_FORTRAN)
++    for (i=0; i<n; i++) {
++        len[i] = va_arg(ap, int);
++    }
++#endif
+     va_end(ap);
+ 
++     /* convert strings to C-strings */
++    for (i=0; i < n; i++) {
++        label[i] = CGNS_NEW(char,len[i]+1);
++        string_2_C_string(f_label[i], len[i], label[i], len[i], ier);
++    }
++
+ #if DEBUG_GOTO
+     printf("\nIn cg_ftoc.c: narguments=%d\n",n);
+     for (i=0; i<n; i++) printf("\targ %d: '%s' #%d\n",i,label[i], index[i]);
+@@ -2942,35 +2987,84 @@ CGNSDLL void FMNAME(cg_gorel_f, CG_GOREL_F)(cgint_f *fn, cgint_f *ier, ...)
+ 
+     *ier = (cgint_f)cgi_update_posit(n, index, label);
+ 
++    for (i=0; i<n; i++) CGNS_FREE(label[i]);
+     return;
+ }
+ 
+ CGNSDLL void FMNAME(cg_goto_f1, CG_GOTO_F1)(cgint_f *fn, cgint_f *B, cgint_f *ier, STR_PSTR(name), cgint_f *index STR_PLEN(name))
+ {
+     int length;
+-    char *c_name;
++    char *c_label[2];
++    int c_index[2], n;
++
++    if (*index < 0) {
++        cgi_error("Incorrect input to function cg_goto_f");
++        *ier = 1;
++        return;
++    }
+ 
+     length = (int) STR_LEN(name);
+-    c_name = CGNS_NEW(char, length+1);
++    c_label[0] = CGNS_NEW(char, length+1);
++    c_label[1] = "end";
++    c_index[0] = (int)*index;
++    c_index[1] = 0;
+ 
+-    string_2_C_string(STR_PTR(name), STR_LEN(name), c_name, length, ier);
+-    if (*ier == 0)
+-        FMNAME(cg_goto_f, CG_GOTO_F)(fn, B, ier, c_name, index, "end");
+-    CGNS_FREE(c_name);
++    string_2_C_string(STR_PTR(name), STR_LEN(name), c_label[0], length, ier);
++
++    if (*ier == 0) {
++      if (c_label[0][0] == ' ' || 0 == strncmp(c_label[0],"end",3) ||
++          0 == strncmp(c_label[0],"END",3)) {
++        n=0;
++      } else {
++        n=1;
++      }
++      *ier = (cgint_f)cgi_set_posit((int)*fn, (int)*B, n, c_index, c_label);
++    }
++
++    CGNS_FREE(c_label[0]);
+ }
+ 
+ CGNSDLL void FMNAME(cg_gorel_f1, CG_GOREL_F1)(cgint_f *fn, cgint_f *ier, STR_PSTR(name), cgint_f *index STR_PLEN(name))
+ {
+     int length;
+-    char *c_name;
++    char *c_label[2];
++    int c_index[2], n;
++
++    if (posit == 0) {
++        cgi_error ("position not set with cg_goto");
++        *ier = (cgint_f)CG_ERROR;
++        return;
++    }
++    if ((int)*fn != posit_file) {
++        cgi_error("current position is in the wrong file");
++        *ier = (cgint_f)CG_ERROR;
++        return;
++    }
++    if (*index < 0) {
++        cgi_error("Incorrect input to function cg_gorel_f1");
++        *ier = 1;
++        return;
++    }
+ 
+     length = (int) STR_LEN(name);
+-    c_name = CGNS_NEW(char, length+1);
++    c_label[0] = CGNS_NEW(char, length+1);
++    c_label[1] = "end";
++    c_index[0] = (int)*index;
++    c_index[1] = 0;
+ 
+-    string_2_C_string(STR_PTR(name), STR_LEN(name), c_name, length, ier);
+-    if (*ier == 0)
+-        FMNAME(cg_gorel_f, CG_GOREL_F)(fn, ier, c_name, index, "end");
+-    CGNS_FREE(c_name);
++    string_2_C_string(STR_PTR(name), STR_LEN(name), c_label[0], length, ier);
++
++    if (*ier == 0) {
++      if (c_label[0][0] == ' ' || 0 == strncmp(c_label[0],"end",3) ||
++          0 == strncmp(c_label[0],"END",3)) {
++        n=0;
++      } else {
++        n=1;
++      }
++      *ier = (cgint_f)cgi_update_posit(n, c_index, c_label);
++    }
++
++    CGNS_FREE(c_label[0]);
+ }
+ 
+ /*-----------------------------------------------------------------------*/
+
+From bac93eee3f4c84ae4e226b12f829ccd910c8c0ce Mon Sep 17 00:00:00 2001
+From: MicK7 <mickey.phy@gmail.com>
+Date: Thu, 30 Apr 2020 18:07:13 +0200
+Subject: [PATCH 4/9] make cg_goto_f and cg_gorel_f coherent with fortran2008
+ function at top of the file
+
+---
+ src/cgns_f.F90 | 331 +++++++++++++++++++------------------------------
+ 1 file changed, 129 insertions(+), 202 deletions(-)
+
+diff --git a/src/cgns_f.F90 b/src/cgns_f.F90
+index 2aabc642..63391826 100644
+--- a/src/cgns_f.F90
++++ b/src/cgns_f.F90
+@@ -5054,327 +5054,254 @@ END SUBROUTINE cgio_set_label_f
+ 
+ 
+ CONTAINS
+-
+   SUBROUTINE cg_goto_f(fn, B, ier, &
+-                  name1, index1,  &
+-                  name2, index2,  &
+-                  name3, index3,  &
+-                  name4, index4,  &
+-                  name5, index5,  &
+-                  name6, index6,  &
+-                  name7, index7,  &
+-                  name8, index8,  &
+-                  name9, index9,  &
+-                  name10, index10,  &
+-                  name11, index11,  &
+-                  name12, index12,  &
+-                  name13, index13,  &
+-                  name14, index14,  &
+-                  name15, index15,  &
+-                  name16, index16,  &
+-                  name17, index17,  &
+-                  name18, index18,  &
+-                  name19, index19,  &
+-                  name20)
++          UserDataName1, i1, UserDataName2, i2, &
++          UserDataName3, i3, UserDataName4, i4, &
++          UserDataName5, i5, UserDataName6, i6, &
++          UserDataName7, i7, UserDataName8, i8, &
++          UserDataName9, i9, UserDataName10, i10, &
++          UserDataName11, i11, UserDataName12, i12, &
++          UserDataName13, i13, UserDataName14, i14, &
++          UserDataName15, i15, UserDataName16, i16, &
++          UserDataName17, i17, UserDataName18, i18, &
++          UserDataName19, i19, UserDataName20, i20, &
++          end)
+      IMPLICIT NONE
+-     INTEGER :: fn
+-     INTEGER :: B
++     INTEGER, INTENT(IN) :: fn
++     INTEGER, INTENT(IN) :: B
+      INTEGER, INTENT(OUT) :: ier
+-     CHARACTER(*) :: name1
+-     INTEGER, OPTIONAL :: index1
+-     CHARACTER(*), OPTIONAL :: name2
+-     INTEGER, OPTIONAL :: index2
+-     CHARACTER(*), OPTIONAL :: name3
+-     INTEGER, OPTIONAL :: index3
+-     CHARACTER(*), OPTIONAL :: name4
+-     INTEGER, OPTIONAL :: index4
+-     CHARACTER(*), OPTIONAL :: name5
+-     INTEGER, OPTIONAL :: index5
+-     CHARACTER(*), OPTIONAL :: name6
+-     INTEGER, OPTIONAL :: index6
+-     CHARACTER(*), OPTIONAL :: name7
+-     INTEGER, OPTIONAL :: index7
+-     CHARACTER(*), OPTIONAL :: name8
+-     INTEGER, OPTIONAL :: index8
+-     CHARACTER(*), OPTIONAL :: name9
+-     INTEGER, OPTIONAL :: index9
+-     CHARACTER(*), OPTIONAL :: name10
+-     INTEGER, OPTIONAL :: index10
+-     CHARACTER(*), OPTIONAL :: name11
+-     INTEGER, OPTIONAL :: index11
+-     CHARACTER(*), OPTIONAL :: name12
+-     INTEGER, OPTIONAL :: index12
+-     CHARACTER(*), OPTIONAL :: name13
+-     INTEGER, OPTIONAL :: index13
+-     CHARACTER(*), OPTIONAL :: name14
+-     INTEGER, OPTIONAL :: index14
+-     CHARACTER(*), OPTIONAL :: name15
+-     INTEGER, OPTIONAL :: index15
+-     CHARACTER(*), OPTIONAL :: name16
+-     INTEGER, OPTIONAL :: index16
+-     CHARACTER(*), OPTIONAL :: name17
+-     INTEGER, OPTIONAL :: index17
+-     CHARACTER(*), OPTIONAL :: name18
+-     INTEGER, OPTIONAL :: index18
+-     CHARACTER(*), OPTIONAL :: name19
+-     INTEGER, OPTIONAL :: index19
+-     CHARACTER(*), OPTIONAL :: name20
+-
+-     IF (.NOT. PRESENT(index1)) THEN
+-        CALL cg_goto_f1(fn, B, ier, name1, 0)
++     CHARACTER(*), DIMENSION(*), INTENT(IN), OPTIONAL :: UserDataName1,UserDataName2, &
++          UserDataName3,UserDataName4,UserDataName5,UserDataName6,UserDataName7,UserDataName8, &
++          UserDataName9,UserDataName10,UserDataName11,UserDataName12,UserDataName13,UserDataName14, &
++          UserDataName15,UserDataName16,UserDataName17,UserDataName18,UserDataName19,UserDataName20
++     INTEGER, INTENT(IN), OPTIONAL :: i1,i2,i3,i4,i5,i6,i7,i8,i9,i10,i11,i12,i13,i14,i15,i16, &
++          i17, i18, i19, i20
++     CHARACTER(*), DIMENSION(*), INTENT(IN), OPTIONAL :: end
++
++     IF (.NOT. PRESENT(i1)) THEN
++        CALL cg_goto_f1(fn, B, ier, UserDataName1, 0)
+         RETURN
+      ELSE
+-        CALL cg_goto_f1(fn, B, ier, name1, index1)
++        CALL cg_goto_f1(fn, B, ier, UserDataName1, i1)
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(i2))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName2, i2)
++     ELSE
++        RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index2))) THEN
+-        CALL cg_gorel_f1(fn, ier, name2, index2)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i3))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName3, i3)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index3))) THEN
+-        CALL cg_gorel_f1(fn, ier, name3, index3)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i4))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName4, i4)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index4))) THEN
+-        CALL cg_gorel_f1(fn, ier, name4, index4)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i5))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName5, i5)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index5))) THEN
+-        CALL cg_gorel_f1(fn, ier, name5, index5)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i6))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName6, i6)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index6))) THEN
+-        CALL cg_gorel_f1(fn, ier, name6, index6)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i7))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName7, i7)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index7))) THEN
+-        CALL cg_gorel_f1(fn, ier, name7, index7)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i8))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName8, i8)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index8))) THEN
+-        CALL cg_gorel_f1(fn, ier, name8, index8)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i9))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName9, i9)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index9))) THEN
+-        CALL cg_gorel_f1(fn, ier, name9, index9)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i10))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName10, i10)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index10))) THEN
+-        CALL cg_gorel_f1(fn, ier, name10, index10)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i11))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName11, i11)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index11))) THEN
+-        CALL cg_gorel_f1(fn, ier, name11, index11)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i12))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName12, i12)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index12))) THEN
+-        CALL cg_gorel_f1(fn, ier, name12, index12)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i13))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName13, i13)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index13))) THEN
+-        CALL cg_gorel_f1(fn, ier, name13, index13)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i14))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName14, i14)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index14))) THEN
+-        CALL cg_gorel_f1(fn, ier, name14, index14)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i15))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName15, i15)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index15))) THEN
+-        CALL cg_gorel_f1(fn, ier, name15, index15)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i16))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName16, i16)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index16))) THEN
+-        CALL cg_gorel_f1(fn, ier, name16, index16)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i17))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName17, i17)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index17))) THEN
+-        CALL cg_gorel_f1(fn, ier, name17, index17)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i18))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName18, i18)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index18))) THEN
+-        CALL cg_gorel_f1(fn, ier, name18, index18)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i19))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName19, i19)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index19))) THEN
+-        CALL cg_gorel_f1(fn, ier, name19, index19)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i20))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName20, i20)
+      ELSE
+         RETURN
+      END IF
+   END SUBROUTINE
+ 
+   SUBROUTINE cg_gorel_f(fn, ier, &
+-                  name1, index1,  &
+-                  name2, index2,  &
+-                  name3, index3,  &
+-                  name4, index4,  &
+-                  name5, index5,  &
+-                  name6, index6,  &
+-                  name7, index7,  &
+-                  name8, index8,  &
+-                  name9, index9,  &
+-                  name10, index10,  &
+-                  name11, index11,  &
+-                  name12, index12,  &
+-                  name13, index13,  &
+-                  name14, index14,  &
+-                  name15, index15,  &
+-                  name16, index16,  &
+-                  name17, index17,  &
+-                  name18, index18,  &
+-                  name19, index19,  &
+-                  name20)
++          UserDataName1, i1, UserDataName2, i2, &
++          UserDataName3, i3, UserDataName4, i4, &
++          UserDataName5, i5, UserDataName6, i6, &
++          UserDataName7, i7, UserDataName8, i8, &
++          UserDataName9, i9, UserDataName10, i10, &
++          UserDataName11, i11, UserDataName12, i12, &
++          UserDataName13, i13, UserDataName14, i14, &
++          UserDataName15, i15, UserDataName16, i16, &
++          UserDataName17, i17, UserDataName18, i18, &
++          UserDataName19, i19, UserDataName20, i20, &
++          end)
+      IMPLICIT NONE
+-     INTEGER :: fn
++     INTEGER, INTENT(IN) :: fn
+      INTEGER, INTENT(OUT) :: ier
+-     CHARACTER(*) :: name1
+-     INTEGER, OPTIONAL :: index1
+-     CHARACTER(*), OPTIONAL :: name2
+-     INTEGER, OPTIONAL :: index2
+-     CHARACTER(*), OPTIONAL :: name3
+-     INTEGER, OPTIONAL :: index3
+-     CHARACTER(*), OPTIONAL :: name4
+-     INTEGER, OPTIONAL :: index4
+-     CHARACTER(*), OPTIONAL :: name5
+-     INTEGER, OPTIONAL :: index5
+-     CHARACTER(*), OPTIONAL :: name6
+-     INTEGER, OPTIONAL :: index6
+-     CHARACTER(*), OPTIONAL :: name7
+-     INTEGER, OPTIONAL :: index7
+-     CHARACTER(*), OPTIONAL :: name8
+-     INTEGER, OPTIONAL :: index8
+-     CHARACTER(*), OPTIONAL :: name9
+-     INTEGER, OPTIONAL :: index9
+-     CHARACTER(*), OPTIONAL :: name10
+-     INTEGER, OPTIONAL :: index10
+-     CHARACTER(*), OPTIONAL :: name11
+-     INTEGER, OPTIONAL :: index11
+-     CHARACTER(*), OPTIONAL :: name12
+-     INTEGER, OPTIONAL :: index12
+-     CHARACTER(*), OPTIONAL :: name13
+-     INTEGER, OPTIONAL :: index13
+-     CHARACTER(*), OPTIONAL :: name14
+-     INTEGER, OPTIONAL :: index14
+-     CHARACTER(*), OPTIONAL :: name15
+-     INTEGER, OPTIONAL :: index15
+-     CHARACTER(*), OPTIONAL :: name16
+-     INTEGER, OPTIONAL :: index16
+-     CHARACTER(*), OPTIONAL :: name17
+-     INTEGER, OPTIONAL :: index17
+-     CHARACTER(*), OPTIONAL :: name18
+-     INTEGER, OPTIONAL :: index18
+-     CHARACTER(*), OPTIONAL :: name19
+-     INTEGER, OPTIONAL :: index19
+-     CHARACTER(*), OPTIONAL :: name20
+-
+-     IF (.NOT. PRESENT(index1)) THEN
+-        CALL cg_gorel_f1(fn, ier, name1, 0)
++     CHARACTER(*), DIMENSION(*), INTENT(IN), OPTIONAL :: UserDataName1,UserDataName2, &
++          UserDataName3,UserDataName4,UserDataName5,UserDataName6,UserDataName7,UserDataName8, &
++          UserDataName9,UserDataName10,UserDataName11,UserDataName12,UserDataName13,UserDataName14, &
++          UserDataName15,UserDataName16,UserDataName17,UserDataName18,UserDataName19,UserDataName20
++     INTEGER, INTENT(IN), OPTIONAL :: i1,i2,i3,i4,i5,i6,i7,i8,i9,i10,i11,i12,i13,i14,i15,i16, &
++          i17, i18, i19, i20
++     CHARACTER(*), DIMENSION(*), INTENT(IN), OPTIONAL :: end
++  
++     IF (PRESENT(i1)) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName1, i1)
++     ELSE
++        CALL cg_gorel_f1(fn, ier, UserDataName1, 0)
+         RETURN
++     END IF
++     IF ((ier .EQ. 0) .AND. (PRESENT(i2))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName2, i2)
+      ELSE
+-        CALL cg_gorel_f1(fn, ier, name1, index1)
++        RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index2))) THEN
+-        CALL cg_gorel_f1(fn, ier, name2, index2)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i3))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName3, i3)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index3))) THEN
+-        CALL cg_gorel_f1(fn, ier, name3, index3)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i4))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName4, i4)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index4))) THEN
+-        CALL cg_gorel_f1(fn, ier, name4, index4)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i5))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName5, i5)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index5))) THEN
+-        CALL cg_gorel_f1(fn, ier, name5, index5)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i6))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName6, i6)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index6))) THEN
+-        CALL cg_gorel_f1(fn, ier, name6, index6)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i7))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName7, i7)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index7))) THEN
+-        CALL cg_gorel_f1(fn, ier, name7, index7)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i8))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName8, i8)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index8))) THEN
+-        CALL cg_gorel_f1(fn, ier, name8, index8)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i9))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName9, i9)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index9))) THEN
+-        CALL cg_gorel_f1(fn, ier, name9, index9)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i10))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName10, i10)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index10))) THEN
+-        CALL cg_gorel_f1(fn, ier, name10, index10)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i11))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName11, i11)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index11))) THEN
+-        CALL cg_gorel_f1(fn, ier, name11, index11)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i12))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName12, i12)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index12))) THEN
+-        CALL cg_gorel_f1(fn, ier, name12, index12)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i13))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName13, i13)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index13))) THEN
+-        CALL cg_gorel_f1(fn, ier, name13, index13)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i14))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName14, i14)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index14))) THEN
+-        CALL cg_gorel_f1(fn, ier, name14, index14)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i15))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName15, i15)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index15))) THEN
+-        CALL cg_gorel_f1(fn, ier, name15, index15)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i16))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName16, i16)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index16))) THEN
+-        CALL cg_gorel_f1(fn, ier, name16, index16)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i17))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName17, i17)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index17))) THEN
+-        CALL cg_gorel_f1(fn, ier, name17, index17)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i18))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName18, i18)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index18))) THEN
+-        CALL cg_gorel_f1(fn, ier, name18, index18)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i19))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName19, i19)
+      ELSE
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(index19))) THEN
+-        CALL cg_gorel_f1(fn, ier, name19, index19)
++     IF ((ier .EQ. 0) .AND. (PRESENT(i20))) THEN
++        CALL cg_gorel_f1(fn, ier, UserDataName20, i20)
+      ELSE
+         RETURN
+      END IF
+
+From 1b332f1f0c050174713ba74ddb9e3d491b3c7c70 Mon Sep 17 00:00:00 2001
+From: MicK7 <mickey.phy@gmail.com>
+Date: Thu, 30 Apr 2020 18:08:16 +0200
+Subject: [PATCH 5/9] fix some gfortran warning
+
+---
+ src/tests/cgiof_f03.F90          |  12 +-
+ src/tests/cgread_f03.F90         |  56 +++----
+ src/tests/cgsubreg_f03.F90       |   4 +-
+ src/tests/cgwrite_f03.F90        | 241 ++++++++++++++++---------------
+ src/tests/cgzconn_f03.F90        |   4 +-
+ src/tests/test_bboxf.F90         |   6 +-
+ src/tests/test_family_treef.F90  |  41 +++---
+ src/tests/test_general_rindf.F90 |   8 +-
+ 8 files changed, 186 insertions(+), 186 deletions(-)
+
+diff --git a/src/tests/cgiof_f03.F90 b/src/tests/cgiof_f03.F90
+index 0d52e3f8..16319a81 100644
+--- a/src/tests/cgiof_f03.F90
++++ b/src/tests/cgiof_f03.F90
+@@ -10,12 +10,12 @@ PROGRAM TEST
+       INTEGER MAXCHR
+       PARAMETER (MAXCHR=32)
+ !
+-      CHARACTER*(MAXCHR) TSTLBL,DTYPE
+-      CHARACTER*(MAXCHR) FNAM,PATH
++      CHARACTER(len=MAXCHR) TSTLBL,DTYPE
++      CHARACTER(len=MAXCHR) FNAM,PATH
+ !
+-      REAL*8 RID,PID,CID,TMPID,RIDF2
++      REAL(kind=8) RID,PID,CID,TMPID,RIDF2
+       REAL A(4,3),B(4,3)
+-      INTEGER*4 IC(6),ID(6)
++      INTEGER(kind=4) IC(6),ID(6)
+       INTEGER IERR,ICGIO,ICGIO2
+       INTEGER(CGSIZE_T) :: IDIM(2),IDIMA(2),IDIMC,IDIMD
+ !
+@@ -217,8 +217,8 @@ SUBROUTINE PRTCLD(ICGIO,PID)
+ !
+       PARAMETER (MAXCLD=10)
+       PARAMETER (MAXCHR=32)
+-      REAL*8 PID
+-      CHARACTER*(MAXCHR) NODNAM,NDNMS(MAXCLD)
++      REAL(kind=8) PID
++      CHARACTER(len=MAXCHR) NODNAM,NDNMS(MAXCLD)
+       CALL CGIO_GET_NAME_F(ICGIO,PID,NODNAM,IERR)
+       CALL CGIO_NUMBER_CHILDREN_F(ICGIO,PID,NUMC,IERR)
+       WRITE(*,120)NODNAM,NUMC
+diff --git a/src/tests/cgread_f03.F90 b/src/tests/cgread_f03.F90
+index b239e10f..6a8314e2 100644
+--- a/src/tests/cgread_f03.F90
++++ b/src/tests/cgread_f03.F90
+@@ -24,7 +24,7 @@ PROGRAM read_cgns_1
+   INTEGER(cgenum_t) :: ndonor_ptset_type, ndonor_data_type
+   INTEGER :: idataset, dirichletflag, neumannflag
+   INTEGER IndexDim, CellDim, PhysDim
+-  INTEGER	ier, n
++  INTEGER ier, n
+   INTEGER(cgenum_t) :: zonetype
+   INTEGER nbases, nzones
+   INTEGER(cgsize_t) :: rmin(3), DataSize(Ndim)
+@@ -37,14 +37,14 @@ PROGRAM read_cgns_1
+   INTEGER(cgsize_t) :: npnts, pnts(100000), donor_pnts(100000)
+   INTEGER(cgsize_t) :: npnts_donor
+   INTEGER(cgenum_t) :: bocotype, datatype
+-  CHARACTER*32 basename, zonename, solname, fieldname
+-  CHARACTER*32 coordname, holename
++  CHARACTER(len=32) basename, zonename, solname, fieldname
++  CHARACTER(len=32) coordname, holename
+ #ifndef CG_BASESCOPE
+-  CHARACTER*32 connectname, donorname
++  CHARACTER(len=32) connectname, donorname
+ #else
+-  CHARACTER*65 connectname, donorname
++  CHARACTER(len=65) connectname, donorname
+ #endif
+-  CHARACTER*32 boconame
++  CHARACTER(len=32) boconame
+   INTEGER cg, base, zone, coord, sol, field, discr
+   INTEGER :: hole, conn, one21, boco
+   INTEGER(cgsize_t) :: RANGE(Ndim, 2), donor_range(Ndim, 2)
+@@ -52,14 +52,14 @@ PROGRAM read_cgns_1
+   INTEGER(cgsize_t) :: G_range(Ndim*2, Nglobal)
+   INTEGER(cgsize_t) :: G_donor_range(Ndim*2, Nglobal)
+   INTEGER :: G_transform(Ndim, Nglobal)
+-  CHARACTER*32 G_zonename(Nglobal)
++  CHARACTER(len=32) G_zonename(Nglobal)
+ #ifndef CG_BASESCOPE
+-  CHARACTER*32 G_connectname(Nglobal), G_donorname(Nglobal)
++  CHARACTER(len=32) G_connectname(Nglobal), G_donorname(Nglobal)
+ #else
+-  CHARACTER*65 G_connectname(Nglobal), G_donorname(Nglobal)
++  CHARACTER(len=65) G_connectname(Nglobal), G_donorname(Nglobal)
+ #endif
+-  CHARACTER*32 name, filename
+-  CHARACTER*40 text, NormDefinitions, StateDescription
++  CHARACTER(len=32) name, filename
++  CHARACTER(len=40) text, NormDefinitions, StateDescription
+   INTEGER :: equation_dimension, GoverningEquationsFlag
+   INTEGER :: GasModelFlag, ViscosityModelFlag
+   INTEGER :: ThermalConductivityModelFlag
+@@ -72,9 +72,9 @@ PROGRAM read_cgns_1
+   INTEGER(cgenum_t) :: mass, length, time, temp, deg
+   INTEGER :: NormalIndex(3), ndataset
+   INTEGER(cgsize_t) :: NormalListSize
+-  REAL*4 data_single(100000)
++  REAL(kind=4) data_single(100000)
+   DOUBLE PRECISION data_double(100000)
+-  REAL*4 version
++  REAL(kind=4) version
+ 
+   INTEGER one, is_cgns
+   PARAMETER (one = 1)
+@@ -384,9 +384,9 @@ PROGRAM read_cgns_1
+                  WRITE(6,600)' Datatype for exponents is ', &
+                       DataTypeName(datatype)
+                  IF (datatype .EQ. RealSingle) THEN
+-	            CALL cg_exponents_read_f(data_single, ier)
+-		    IF (ier .EQ. ERROR) CALL cg_error_exit_f
+-		    WRITE(6,110)' Exponents:',(data_single(n),n=1,5)
++                    CALL cg_exponents_read_f(data_single, ier)
++                    IF (ier .EQ. ERROR) CALL cg_error_exit_f
++                    WRITE(6,110)' Exponents:',(data_single(n),n=1,5)
+                  ELSEIF (datatype .EQ. RealDouble) THEN
+                     CALL cg_exponents_read_f(data_double, ier)
+                     IF (ier .EQ. ERROR) CALL cg_error_exit_f
+@@ -412,8 +412,8 @@ PROGRAM read_cgns_1
+                  ENDIF
+               ENDIF
+ 
+-           ENDDO	! loop through DataArray_t
+-        ENDDO	! loop through IntegralData_t
++           ENDDO ! loop through DataArray_t
++        ENDDO ! loop through IntegralData_t
+ 
+         WRITE(6,400)'                             *     *     *'
+ 
+@@ -490,7 +490,7 @@ PROGRAM read_cgns_1
+                       ' DescriptorText="',TRIM(text),'"'
+               ENDDO
+ 
+-           ENDDO	! loop through data arrays
++           ENDDO ! loop through data arrays
+ 
+            ! *** read coordinates using coordinate arrays' specific functions:
+ 
+@@ -526,7 +526,7 @@ PROGRAM read_cgns_1
+                  IF (ier .EQ. ERROR) CALL cg_error_exit_f
+               ENDIF
+            ENDDO
+-        ENDIF 	! if GridCoordinates_t exists
++        ENDIF ! if GridCoordinates_t exists
+ 
+         WRITE(6,400)'                             *     *     *'
+ 
+@@ -888,7 +888,7 @@ PROGRAM read_cgns_1
+                  ENDDO
+               ENDIF
+            ENDDO
+-        ENDIF	! if ZoneGridConnectivity exists
++        ENDIF ! if ZoneGridConnectivity exists
+ 
+         WRITE(6,400)'                             *     *     *'
+ 
+@@ -953,7 +953,7 @@ PROGRAM read_cgns_1
+                       TemperatureUnitsName(temp), TimeUnitsName(time), &
+                       AngleUnitsName(deg)
+               ENDIF
+-           ENDIF	!if ReferenceState exists under ZoneBC_t
++           ENDIF  !if ReferenceState exists under ZoneBC_t
+ 
+            CALL cg_nbocos_f(cg, base, zone, nbocos, ier)
+            IF (ier .EQ. ERROR) CALL cg_error_exit_f
+@@ -1047,14 +1047,14 @@ PROGRAM read_cgns_1
+                     IF (ier .EQ. ERROR) CALL cg_error_exit_f
+ 
+                     ! ** boundary condition data attributes: DataClass_t
+-		    WRITE(6,401)'   Dirichlet DataSet:'
+-		    CALL cg_dataclass_read_f(TYPE,ier)
+-		    IF (ier .EQ. ERROR) CALL cg_error_exit_f
++                    WRITE(6,401)'   Dirichlet DataSet:'
++                    CALL cg_dataclass_read_f(TYPE,ier)
++                    IF (ier .EQ. ERROR) CALL cg_error_exit_f
+                     WRITE(6,600)'    DataClass=', &
+                          DataClassName(TYPE)
+ 
+                     ! ** boundary condition data attributes: DataArray_t
+-		    CALL cg_narrays_f(narrays, ier)
++                    CALL cg_narrays_f(narrays, ier)
+                     IF (ier .EQ. ERROR) CALL cg_error_exit_f
+                     WRITE(6,127) '    DirichletData', &
+                          ' contains ', narrays,' data arrays'
+@@ -1081,7 +1081,7 @@ PROGRAM read_cgns_1
+                           WRITE(6,106)&
+                                (data_double(n),n=1,dim_vals(1))
+                        ENDIF
+-		    ENDDO
++                    ENDDO
+                  ENDIF
+ 
+                  IF (NeumannFlag.EQ.1) THEN
+@@ -1170,7 +1170,7 @@ PROGRAM read_cgns_1
+      ENDIF
+ 
+ 
+-  ENDDO    				! loop through bases
++  ENDDO        ! loop through bases
+ 
+   WRITE(6,400)'                             *     *     *'
+ 
+diff --git a/src/tests/cgsubreg_f03.F90 b/src/tests/cgsubreg_f03.F90
+index 507de9fc..faa783aa 100644
+--- a/src/tests/cgsubreg_f03.F90
++++ b/src/tests/cgsubreg_f03.F90
+@@ -12,8 +12,8 @@ program cgsubreg
+       integer(cgsize_t) ptrange(6), ptlist(125), npts
+       integer(cgenum_t) loc, ptype
+       integer bclen, gclen
+-      real*4 x(125), y(125), z(125)
+-      character*32 sname, cname
++      real(kind=4) x(125), y(125), z(125)
++      character(len=32) sname, cname
+ 
+ ! open and write base
+       dim = 3
+diff --git a/src/tests/cgwrite_f03.F90 b/src/tests/cgwrite_f03.F90
+index a1f0efd3..9f8096f8 100644
+--- a/src/tests/cgwrite_f03.F90
++++ b/src/tests/cgwrite_f03.F90
+@@ -10,7 +10,7 @@ program write_cgns_1
+ !       last revised on March 8 2000
+ 
+ !       This example test the complete SIDS for multi-block data.
+-!	It creates a dummy mesh composed of 2 structured blocks in 3D.
++!    It creates a dummy mesh composed of 2 structured blocks in 3D.
+ 
+       integer Ndim
+       parameter (Ndim = 3)
+@@ -29,11 +29,11 @@ program write_cgns_1
+       INTEGER(CGSIZE_T) :: pnts(Ndim,120), donor_pnts(Ndim,120)
+       integer transform(Ndim)
+       INTEGER :: nptsets, nrmlistflag
+-      real*4 data(120), normals(360)
++      real(kind=4) data(120), normals(360)
+       double precision Dxyz(120), values(120)
+-      character*32 zonename, solname, fieldname
+-      character*32 coordname(Ndim)
+-      character*32 donorname
++      character(len=32) zonename, solname, fieldname
++      character(len=32) coordname(Ndim)
++      character(len=32) donorname
+ 
+       coordname(1) = 'CoordinateX'
+       coordname(2) = 'CoordinateY'
+@@ -55,145 +55,148 @@ program write_cgns_1
+       if (ier .eq. ERROR) call cg_error_exit_f
+ 
+ ! *** zone
+-	do zone=1, 2
+-    	    write(zonename,'(a5,i1)') 'zone#',zone
+-    	    num = 1
+-	    do i=1,index_dim          		! zone#1: 3*4*5, zone#2: 4*5*6
+-                size(i) = i+zone+1		! nr of nodes in i,j,k
+-		size(i+Ndim) = size(i)-1	! nr of elements in i,j,k
+-	 	size(i+2*Ndim) = 0		! nr of bnd nodes if ordered
+-       		num = num * size(i)		! nr of nodes
+-    	    enddo
++      do zone=1, 2
++          write(zonename,'(a5,i1)') 'zone#',zone
++          num = 1 
++          do i=1,index_dim                    ! zone#1: 3*4*5, zone#2: 4*5*6
++              size(i) = i+zone+1              ! nr of nodes in i,j,k
++              size(i+Ndim) = size(i)-1        ! nr of elements in i,j,k
++              size(i+2*Ndim) = 0              ! nr of bnd nodes if ordered
++              num = num * size(i)             ! nr of nodes
++          enddo
+ !234567890!234567890!234567890!234567890!234567890!234567890!23456789012
+             call cg_zone_write_f(cg, base_no, zonename, size,           &
+      &                           Structured, zone_no, ier)
+-    	    if (ier .eq. ERROR) call cg_error_exit_f
++          if (ier .eq. ERROR) call cg_error_exit_f
+ 
+ ! *** coordinate
+-     	    do coord=1, phys_dim
+- 		do k=1, size(3)
+- 		do j=1, size(2)
+- 		do i=1, size(1)
+-		    pos = i + (j-1)*size(1) + (k-1)*size(1)*size(2)
+-		! * make up some dummy coordinates just for the test:
+- 	    	    if (coord.eq.1) Dxyz(pos) = i
+- 	    	    if (coord.eq.2) Dxyz(pos) = j
+- 	    	    if (coord.eq.3) Dxyz(pos) = k
+- 		enddo
+- 		enddo
+- 		enddo
+-
+-                call cg_coord_write_f(cg, base_no, zone_no, RealDouble, &
++          do coord=1, phys_dim
++            do k=1, size(3)
++              do j=1, size(2)
++                do i=1, size(1)
++                    pos = i + (j-1)*size(1) + (k-1)*size(1)*size(2)
++                    ! * make up some dummy coordinates just for the test:
++                    if (coord.eq.1) Dxyz(pos) = i
++                    if (coord.eq.2) Dxyz(pos) = j
++                    if (coord.eq.3) Dxyz(pos) = k
++                enddo
++              enddo
++            enddo
++
++            call cg_coord_write_f(cg, base_no, zone_no, RealDouble,     &
+      &                            coordname(coord), Dxyz, coord_no, ier)
+-         	if (ier .eq. ERROR) call cg_error_exit_f
++            if (ier .eq. ERROR) call cg_error_exit_f
+ 
+-     	    enddo
++          enddo
+ 
+ ! *** solution
+-     	    do sol=1, 2
+- 		write(solname,'(a5,i1,a5,i1)') 'Zone#',zone,' sol#',sol
+-                call cg_sol_write_f(cg, base_no, zone_no, solname,      &
++          do sol=1, 2
++          write(solname,'(a5,i1,a5,i1)') 'Zone#',zone,' sol#',sol
++          call cg_sol_write_f(cg, base_no, zone_no, solname,            &
+      &                              Vertex, sol_no, ier)
+- 		if (ier .eq. ERROR) call cg_error_exit_f
++          if (ier .eq. ERROR) call cg_error_exit_f
+ 
+ ! *** solution field
+- 		do field=1, 2
+-		    ! make up some dummy solution values
+- 	    	    do i=1, num
+- 		  	values(i) = i*field*sol
+- 	    	    enddo
+- 	    	    write(fieldname,'(a6,i1)') 'Field#',field
+-                    call cg_field_write_f(cg, base_no, zone_no, sol_no, &
++          do field=1, 2
++             ! make up some dummy solution values
++            do i=1, num
++              values(i) = i*field*sol
++            enddo
++            write(fieldname,'(a6,i1)') 'Field#',field
++            call cg_field_write_f(cg, base_no, zone_no, sol_no,         &
+      &                  RealDouble, fieldname, values, field_no, ier)
+- 	    	    if (ier .eq. ERROR) call cg_error_exit_f
++            if (ier .eq. ERROR) call cg_error_exit_f
+ 
+- 		enddo				! field loop
+-            enddo				! solution loop
++          enddo                ! field loop
++        enddo                ! solution loop
+ 
+ ! *** discrete data
+-            call cg_discrete_write_f(cg, base_no, zone_no, 'discrete#1',&
++        call cg_discrete_write_f(cg, base_no, zone_no, 'discrete#1',    &
+      &                               discr_no, ier)
+-	    if (ier .eq. ERROR) call cg_error_exit_f
++        if (ier .eq. ERROR) call cg_error_exit_f
+ 
+-  	! *** discrete data arrays, defined on vertices:
++! *** discrete data arrays, defined on vertices:
+             call cg_goto_f(cg, base_no, ier, 'Zone_t', zone,            &
+      &                     'DiscreteData_t', discr_no, 'end')
+             if (ier .eq. ERROR) call cg_error_exit_f
+ 
+-	    do 123 k=1, size(3)
+-            do 123 j=1, size(2)
+-            do 123 i=1, size(1)
++            do k=1, size(3)
++              do j=1, size(2)
++                do i=1, size(1)
+                 pos = i + (j-1)*size(1) + (k-1)*size(1)*size(2)
+-	        data(pos) = pos	! * make up some dummy data
+- 123	    continue
++                data(pos) = pos    ! * make up some dummy data
++                enddo
++              enddo
++            enddo
+             call cg_array_write_f('arrayname', RealSingle, index_dim,   &
+      &                             size, data, ier)
+             if (ier .eq. ERROR) call cg_error_exit_f
+ 
+-  	! *** discrete data arrays attribute: GOTO DataArray node
++! *** discrete data arrays attribute: GOTO DataArray node
+             call cg_goto_f(cg, base_no, ier, 'Zone_t', zone,            &
+-     &	            'DiscreteData_t', discr_no, 'DataArray_t', 1, 'end')
+-	    if (ier .eq. ERROR) call cg_error_exit_f
++     &           'DiscreteData_t', discr_no, 'DataArray_t', 1, 'end')
++            if (ier .eq. ERROR) call cg_error_exit_f
+ 
+             call cg_units_write_f(Kilogram, Meter, Second, Kelvin,      &
+      &                            Radian, ier)
+             if (ier .eq. ERROR) call cg_error_exit_f
+ 
+ ! *** overset holes
+-	 !  create dummy data
+-	    do i=1,3
+-	      ! Define 2 separate PointRange, for 2 patches in the hole
+-		pnts(i,1)=1
+-		pnts(i,2)=size(i)
+-	      ! second PointRange of hole
+-		pnts(i,3)=2
+-		pnts(i,4)=size(i)
+-	    enddo
+-	  ! Hole defined with 2 point set type PointRange, so 4 points:
+-	    nptsets = 2
+-	    npnts = 4
++     !  create dummy data
++        do i=1,3
++          ! Define 2 separate PointRange, for 2 patches in the hole
++          pnts(i,1)=1
++          pnts(i,2)=size(i)
++          ! second PointRange of hole
++          pnts(i,3)=2
++          pnts(i,4)=size(i)
++        enddo
++      ! Hole defined with 2 point set type PointRange, so 4 points:
++        nptsets = 2
++        npnts = 4
+             call cg_hole_write_f(cg, base_no, zone_no, 'hole#1', Vertex,&
+      &                           PointRange, nptsets, npnts, pnts,      &
+      &                           hole_no, ier)
+-	    if (ier .eq. ERROR) call cg_error_exit_f
++        if (ier .eq. ERROR) call cg_error_exit_f
+ 
+ ! *** general connectivity
+-	    do 100 n=1, 5
+-	    do 100 i=1,3
+-	        pnts(i,n)=i		! * dummy data
+-		donor_pnts(i,n)=i*2
+- 100        continue
+-	  ! create a point matching connectivity
+-	    npnts = 5
++        do n=1, 5
++          do i=1,3
++            pnts(i,n)=i        ! * dummy data
++            donor_pnts(i,n)=i*2
++          enddo
++        enddo
++        ! create a point matching connectivity
++        npnts = 5
+             call cg_conn_write_f(cg, base_no, zone_no, 'Connect#1',     &
+      &          Vertex, Abutting1to1, PointList, npnts, pnts, 'zone#2', &
+      &          Structured, PointListDonor, Integer, npnts, donor_pnts, &
+      &          conn_no, ier)
+-	    if (ier .eq. ERROR) call cg_error_exit_f
++        if (ier .eq. ERROR) call cg_error_exit_f
+ 
+ ! *** connectivity 1to1
+-	 !  generate data
+-	    do i=1,3
+-	     !**make up some dummy data:
++     !  generate data
++        do i=1,3
++         !**make up some dummy data:
+                 pnts(i,1)=1
+                 pnts(i,2)=size(i)
+-		donor_pnts(i,1)=1
+-		donor_pnts(i,2)=size(i)
+-		transform(i)=i*(-1)
++        donor_pnts(i,1)=1
++        donor_pnts(i,2)=size(i)
++        transform(i)=i*(-1)
+             enddo
+-	    if (zone .eq. 1) then
+-		donorname='zone#2'
+-	    else if (zone .eq. 2) then
+-		donorname='zone#1'
+-	    endif
++        if (zone .eq. 1) then
++        donorname='zone#2'
++        else if (zone .eq. 2) then
++        donorname='zone#1'
++        endif
+ 
+             call cg_1to1_write_f(cg, base_no, zone_no, '1to1_#1',       &
+-     &		donorname, pnts, donor_pnts, transform, conn_no, ier)
+-	    if (ier .eq. ERROR) call cg_error_exit_f
++     &        donorname, pnts, donor_pnts, transform, conn_no, ier)
++        if (ier .eq. ERROR) call cg_error_exit_f
+ ! *** ZoneGridConnectivity attributes:  GOTO ZoneGridConnectivity_t node
+             call cg_goto_f(cg, base_no, ier, 'Zone_t', zone,            &
+      &                     'ZoneGridConnectivity_t', one, 'end')
+-	    if (ier .eq. ERROR) call cg_error_exit_f
++        if (ier .eq. ERROR) call cg_error_exit_f
+ 
+ ! *** ZoneGridConnectivity attributes: Descriptor_t
+ !234567890!234567890!234567890!234567890!234567890!234567890!23456789012
+@@ -204,33 +207,33 @@ program write_cgns_1
+             npnts = 2
+             call cg_boco_write_f(cg, base_no, zone_no, 'boco#1',        &
+      &           BCInflow, PointRange, npnts, pnts, boco_no, ier)
+-	    if (ier .eq. ERROR) call cg_error_exit_f
++        if (ier .eq. ERROR) call cg_error_exit_f
+ 
+ ! *** boco normal
+-	    npnts = 1
+-	    do i=1,Ndim
+-	        NormalIndex(i)=0
+-		! compute nr of points on bc patch:
+-		npnts = npnts * (pnts(i,2)-pnts(i,1)+1)
+-	    enddo
+-	    NormalIndex(1)=1
+-	    do i=1,phys_dim*npnts
+-		normals(i)=i
+-	    enddo
++        npnts = 1
++        do i=1,Ndim
++            NormalIndex(i)=0
++        ! compute nr of points on bc patch:
++        npnts = npnts * (pnts(i,2)-pnts(i,1)+1)
++        enddo
++        NormalIndex(1)=1
++        do i=1,phys_dim*npnts
++        normals(i)=i
++        enddo
+ 
+             nrmlistflag = 1
+             call cg_boco_normal_write_f(cg, base_no, zone_no, boco_no,  &
+      &         NormalIndex, nrmlistflag, RealSingle, normals, ier)
+-	    if (ier .eq. ERROR) call cg_error_exit_f
++        if (ier .eq. ERROR) call cg_error_exit_f
+ 
+ ! ** boundary condition attributes: GOTO BC_t node
+             call cg_goto_f(cg, base_no, ier, 'Zone_t', zone, 'ZoneBC_t',&
+      &          one, 'BC_t', boco_no, 'end')
+-	    if (ier .eq. ERROR) call cg_error_exit_f
++        if (ier .eq. ERROR) call cg_error_exit_f
+ 
+ ! ** boundary condition attributes:  GridLocation_t
+-	    call cg_gridlocation_write_f(Vertex, ier)
+-	    if (ier .eq. ERROR) call cg_error_exit_f
++        call cg_gridlocation_write_f(Vertex, ier)
++        if (ier .eq. ERROR) call cg_error_exit_f
+ 
+ ! ** boundary condition dataset
+             call cg_dataset_write_f(cg, base_no, zone,                  &
+@@ -240,30 +243,30 @@ program write_cgns_1
+ ! ** boundary condition data:
+             call cg_bcdata_write_f(cg, base_no, zone,                   &
+      &         boco_no, dset_no, Neumann, ier)
+-	    if (ier .eq. ERROR) call cg_error_exit_f
++        if (ier .eq. ERROR) call cg_error_exit_f
+ 
+ ! ** boundary condition data arrays: GOTO BCData_t node
+             CALL cg_goto_f(cg, base_no, ier, 'Zone_t', zone_no,         &
+      &          'ZoneBC_t', one, 'BC_t', boco_no, 'BCDataSet_t',        &
+      &          dset_no, 'BCData_t', Neumann, 'end')
+-	    if (ier .eq. ERROR) call cg_error_exit_f
++        if (ier .eq. ERROR) call cg_error_exit_f
+ 
+-	    do i=1, npnts
+-		data(i) = i
+-	    enddo
+-	    ndims = 1
++        do i=1, npnts
++        data(i) = i
++        enddo
++        ndims = 1
+             call cg_array_write_f('dataset_arrayname', RealSingle,      &
+-     &           ndims, npnts, data, ier)
+-	    if (ier .eq. ERROR) call cg_error_exit_f
++     &           ndims, [npnts], data, ier)
++        if (ier .eq. ERROR) call cg_error_exit_f
+ 
+ ! ** boundary condition data attributes:
+-	    call cg_dataclass_write_f(NormalizedByDimensional, ier)
++        call cg_dataclass_write_f(NormalizedByDimensional, ier)
+             if (ier .eq. ERROR) call cg_error_exit_f
+ 
+- 	enddo					! zone loop
++     enddo                    ! zone loop
+ 
+ ! *** close CGNS file
+-	call cg_close_f(cg, ier)
+-	if (ier .eq. ERROR) call cg_error_exit_f
++     call cg_close_f(cg, ier)
++     if (ier .eq. ERROR) call cg_error_exit_f
+ 
+-	end
++     end
+diff --git a/src/tests/cgzconn_f03.F90 b/src/tests/cgzconn_f03.F90
+index 7619c6b2..eaf1e1fb 100644
+--- a/src/tests/cgzconn_f03.F90
++++ b/src/tests/cgzconn_f03.F90
+@@ -17,8 +17,8 @@ program cgzconn
+       INTEGER(cgsize_t) npts
+       INTEGER(cgenum_t) loc, type,  ptype, dztype, dptype, ddtype
+       INTEGER(cgsize_t) dnpts
+-      real*4 x(125), y(125), z(125), exp(5)
+-      character*32 zname, dname, cname
++      real(kind=4) x(125), y(125), z(125), exp(5)
++      character(len=32) zname, dname, cname
+ 
+ ! open and write base
+       dim = 3
+diff --git a/src/tests/test_bboxf.F90 b/src/tests/test_bboxf.F90
+index 9a9a6a11..61ae38a6 100644
+--- a/src/tests/test_bboxf.F90
++++ b/src/tests/test_bboxf.F90
+@@ -9,15 +9,15 @@ program testbboxf
+       integer, parameter :: celldim = 3, physdim = 3
+       integer, parameter :: NUM_SIDE = 5
+ 
+-      real*4, dimension(NUM_SIDE*NUM_SIDE*NUM_SIDE) :: coord
+-      real*8, dimension(3, 2) :: bbox
++      real(kind=4), dimension(NUM_SIDE*NUM_SIDE*NUM_SIDE) :: coord
++      real(kind=8), dimension(3, 2) :: bbox
+ 
+       integer :: n
+       integer :: ierr
+       integer :: cgfile, cgbase, cgzone, cgcoord
+       integer(cgsize_t) :: size(9)
+       
+-      character*32 fname
++      character(len=32) fname
+       fname = 'boundingbox_f90.cgns'
+ 
+       do n=1,NUM_SIDE*NUM_SIDE*NUM_SIDE
+diff --git a/src/tests/test_family_treef.F90 b/src/tests/test_family_treef.F90
+index 76ec339a..2fd2d773 100644
+--- a/src/tests/test_family_treef.F90
++++ b/src/tests/test_family_treef.F90
+@@ -13,26 +13,26 @@ program testfamilytreef
+       integer(cgsize_t) :: npts
+       integer :: celldim, physdim
+ 
+-      real*4, dimension(NUM_SIDE*NUM_SIDE*NUM_SIDE) :: xcoord
+-      real*4, dimension(NUM_SIDE*NUM_SIDE*NUM_SIDE) :: ycoord
+-      real*4, dimension(NUM_SIDE*NUM_SIDE*NUM_SIDE) :: zcoord
++      real(kind=4), dimension(NUM_SIDE*NUM_SIDE*NUM_SIDE) :: xcoord
++      real(kind=4), dimension(NUM_SIDE*NUM_SIDE*NUM_SIDE) :: ycoord
++      real(kind=4), dimension(NUM_SIDE*NUM_SIDE*NUM_SIDE) :: zcoord
+ 
+       integer :: ierr
+       integer :: i, j, k, n, nfam, nb, ng, nnames
+       integer :: cgfile, cgbase, cgtree, cgzone, cgfam, cgcoord
+       integer :: cgbc, cgsr
+ 
+-      real*4, dimension(5) :: exponents
+-      character*32 outfile
+-      character*32 name
+-      character*32 tname
++      real(kind=4), dimension(5) :: exponents
++      character(len=32) outfile
++      character(len=32) name
++      character(len=32) tname
+       character(len=20*33) :: family_name
+       character(len=20*33) :: tfamily_name
+ 
+ ! ----  WRITING TESTS  ----
+ 
+       outfile = "family_tree_f90.cgns"
+-      ! call unlink( outfile )
++      !call unlink( outfile )
+       ! write(*, *) 'Create file'
+       call cg_open_f(outfile, CG_MODE_WRITE, cgfile, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+@@ -88,9 +88,8 @@ program testfamilytreef
+       call cg_coord_write_f(cgfile, cgbase, cgzone, RealSingle, &
+      &       "CoordinateZ", zcoord, cgcoord, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+-      call cg_goto_f(cgfile, cgbase, ierr, "Zone_t", cgzone, &
+-     &       "GridCoordinates_t", 1, &
+-     &       "CoordinateX", 0, 'end')
++      call cg_gopath_f(cgfile,                                  &
++     &    "/Structured/Zone/GridCoordinates/CoordinateX", ierr)
+       call cg_exponents_write_f(RealSingle, exponents, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_gopath_f(cgfile, "../CoordinateY", ierr)
+@@ -149,7 +148,7 @@ program testfamilytreef
+ 
+ ! NODE BASED FAMILY NODE CREATION
+ 
+-      call cg_goto_f( cgfile, cgtree, ierr, "Family2", 0, 'end')
++      call cg_gopath_f( cgfile, "/FamilyTree/Family2", ierr)
+       call cg_node_family_write_f( "Family2.1", cgfam, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+ 
+@@ -164,8 +163,7 @@ program testfamilytreef
+       call cg_node_nfamilies_f( nfam , ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+       
+-      call cg_goto_f( cgfile, cgtree, ierr, "Family2", 0, &
+-     &               "Family2.1", 0, 'end')
++      call cg_gopath_f( cgfile, "/FamilyTree/Family2/Family2.1", ierr)
+       call cg_node_family_write_f( "Family2.1.1", cgfam, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f      
+ 
+@@ -187,13 +185,13 @@ program testfamilytreef
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+ 
+ 
+-      call cg_goto_f(cgfile, cgtree, ierr, 'end')
++      call cg_gopath_f(cgfile, "/FamilyTree", ierr)
+       call cg_node_family_write_f( "FamilyN", cgfam, ierr) 
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+ 
+ !  FAMILY (TREE) NAME CREATION
+ 
+-      call cg_goto_f(cgfile, cgbase, ierr, "Zone", 0, 'end')
++      call cg_gopath_f(cgfile, "/Structured/Zone", ierr)
+       call cg_famname_write_f("/FamilyTree/Family1", ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+       do j=1,3
+@@ -212,8 +210,7 @@ program testfamilytreef
+       call cg_boco_write_f(cgfile, cgbase, 1, "Inflow", BCInflow, &
+      &            PointRange, npts, ptrange, cgbc, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+-      call cg_goto_f(cgfile, cgbase, ierr, "Zone", 0, "ZoneBC", 0, &
+-     &               "Inflow", 0,'end')
++      call cg_gopath_f(cgfile, "/Structured/Zone/ZoneBC/Inflow", ierr)
+ 
+       call cg_famname_write_f("/FamilyTree/Family2", ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+@@ -228,7 +225,7 @@ program testfamilytreef
+       call cg_subreg_bcname_write_f(cgfile, cgbase, cgzone, "SubRegion", &
+      &       2, "Inflow", cgsr, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+-      call cg_goto_f(cgfile, cgbase, ierr, "Zone", 0, "SubRegion", 0, 'end')
++      call cg_gopath_f(cgfile, "/Structured/Zone/SubRegion", ierr)
+       call cg_famname_write_f("/FamilyTree/Family3", ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f     
+       do j = 1,3
+@@ -238,12 +235,12 @@ program testfamilytreef
+          if (ierr .ne. CG_OK) call cg_error_exit_f
+       enddo
+ 
+-      call cg_goto_f(cgfile, cgbase, ierr, "Zone", 0, 'end')
++      call cg_gopath_f(cgfile, "/Structured/Zone", ierr)
+       call cg_user_data_write_f("UserData", ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_user_data_write_f("UserData2", ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+-      call cg_goto_f(cgfile, cgbase, ierr, "Zone", 0, "UserData", 0, 'end')
++      call cg_gopath_f(cgfile, "./UserData", ierr)
+       call cg_famname_write_f("/FamilyTree/Family4", ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+       do j = 1,3
+@@ -300,7 +297,7 @@ program testfamilytreef
+ 
+ !  FAMILY NODE DELETION
+ 
+-      call cg_goto_f(cgfile, cgtree, ierr, "Family1", 0, "Family1.2",0, "Family1.2.1",0, 'end')
++      call cg_gopath_f(cgfile,"/FamilyTree/Family1/Family1.2/Family1.2.1", ierr)
+ 
+       call cg_gopath_f(cgfile, "/FamilyTree/Family1/Family1.2/Family1.2.1", ierr)
+ 
+diff --git a/src/tests/test_general_rindf.F90 b/src/tests/test_general_rindf.F90
+index 14b6d2ff..1af3d5fb 100644
+--- a/src/tests/test_general_rindf.F90
++++ b/src/tests/test_general_rindf.F90
+@@ -28,11 +28,11 @@ program testgeneralrindf
+       integer(cgsize_t) :: rmin(3), rmax(3)
+       integer(cgsize_t) :: m_rmin(3), m_rmax(3)
+ 
+-      real*4, dimension(NUM_I, NUM_J, NUM_K) :: xcoord, ycoord, zcoord
+-      real*4, dimension(NUM_I, NUM_J, NUM_K) :: solution, fbuf
++      real(kind=4), dimension(NUM_I, NUM_J, NUM_K) :: xcoord, ycoord, zcoord
++      real(kind=4), dimension(NUM_I, NUM_J, NUM_K) :: solution, fbuf
+ 
+-      character*32 coordname(3)
+-      character*32 fieldname
++      character(len=32) coordname(3)
++      character(len=32) fieldname
+ 
+       coordname(1) = 'CoordinateX'
+       coordname(2) = 'CoordinateY'
+
+From a4eba673d8dbdddbb253c818d9d63ee957582d8c Mon Sep 17 00:00:00 2001
+From: Scot Breitenfeld <brtnfld@hdfgroup.org>
+Date: Wed, 22 Jul 2020 23:56:38 -0500
+Subject: [PATCH 6/9] fixed types with assumption KIND=byte
+
+---
+ src/tests/cgiof_f03.F90          | 13 ++++++++-----
+ src/tests/cgread_f03.F90         | 11 ++++++-----
+ src/tests/cgsubreg_f03.F90       |  4 +++-
+ src/tests/cgwrite_f03.F90        |  3 ++-
+ src/tests/cgzconn_f03.F90        |  4 +++-
+ src/tests/test_bboxf.F90         |  8 +++++---
+ src/tests/test_family_treef.F90  |  9 +++++----
+ src/tests/test_general_rindf.F90 |  6 ++++--
+ 8 files changed, 36 insertions(+), 22 deletions(-)
+
+diff --git a/src/tests/cgiof_f03.F90 b/src/tests/cgiof_f03.F90
+index 16319a81..c43cac27 100644
+--- a/src/tests/cgiof_f03.F90
++++ b/src/tests/cgiof_f03.F90
+@@ -9,15 +9,17 @@ PROGRAM TEST
+ !
+       INTEGER MAXCHR
+       PARAMETER (MAXCHR=32)
+-!
++
++      INTEGER, PARAMETER :: dp = KIND(1.d0)
++      INTEGER, PARAMETER :: i4 = SELECTED_INT_KIND(9) ! should map to INTEGER*4 on most modern processors
+       CHARACTER(len=MAXCHR) TSTLBL,DTYPE
+       CHARACTER(len=MAXCHR) FNAM,PATH
+ !
+-      REAL(kind=8) RID,PID,CID,TMPID,RIDF2
++      REAL(KIND=dp) RID,PID,CID,TMPID,RIDF2
+       REAL A(4,3),B(4,3)
+-      INTEGER(kind=4) IC(6),ID(6)
++      INTEGER(KIND=i4) IC(6),ID(6)
+       INTEGER IERR,ICGIO,ICGIO2
+-      INTEGER(CGSIZE_T) :: IDIM(2),IDIMA(2),IDIMC,IDIMD
++      INTEGER(KIND=CGSIZE_T) :: IDIM(2),IDIMA(2),IDIMC,IDIMD
+ !
+       DATA A /1.1,2.1,3.1,4.1,                                          &
+      &      1.2,2.2,3.2,4.2,                                            &
+@@ -217,7 +219,8 @@ SUBROUTINE PRTCLD(ICGIO,PID)
+ !
+       PARAMETER (MAXCLD=10)
+       PARAMETER (MAXCHR=32)
+-      REAL(kind=8) PID
++      INTEGER, PARAMETER :: dp = KIND(1.d0)
++      REAL(KIND=dp) PID
+       CHARACTER(len=MAXCHR) NODNAM,NDNMS(MAXCLD)
+       CALL CGIO_GET_NAME_F(ICGIO,PID,NODNAM,IERR)
+       CALL CGIO_NUMBER_CHILDREN_F(ICGIO,PID,NUMC,IERR)
+diff --git a/src/tests/cgread_f03.F90 b/src/tests/cgread_f03.F90
+index 6a8314e2..58fc8ef9 100644
+--- a/src/tests/cgread_f03.F90
++++ b/src/tests/cgread_f03.F90
+@@ -11,11 +11,12 @@ PROGRAM read_cgns_1
+ 
+   ! This program reads a 3D mesh, structured or unstructured.
+ 
+-
+   INTEGER :: Ndim, Nglobal
+   PARAMETER (Ndim = 3)
+   PARAMETER (Nglobal = 500)
+-
++  INTEGER, PARAMETER :: sp = KIND(1.0)
++  INTEGER, PARAMETER :: dp = KIND(1.d0)
++  
+   INTEGER :: i, narrays, iarray
+   INTEGER :: nintegrals, integral
+   INTEGER :: ndescriptors, idescr
+@@ -72,9 +73,9 @@ PROGRAM read_cgns_1
+   INTEGER(cgenum_t) :: mass, length, time, temp, deg
+   INTEGER :: NormalIndex(3), ndataset
+   INTEGER(cgsize_t) :: NormalListSize
+-  REAL(kind=4) data_single(100000)
+-  DOUBLE PRECISION data_double(100000)
+-  REAL(kind=4) version
++  REAL(KIND=sp) data_single(100000)
++  REAL(KIND=dp) data_double(100000)
++  REAL(KIND=sp) version
+ 
+   INTEGER one, is_cgns
+   PARAMETER (one = 1)
+diff --git a/src/tests/cgsubreg_f03.F90 b/src/tests/cgsubreg_f03.F90
+index faa783aa..043ab0c0 100644
+--- a/src/tests/cgsubreg_f03.F90
++++ b/src/tests/cgsubreg_f03.F90
+@@ -6,13 +6,15 @@ program cgsubreg
+       USE CGNS
+       IMPLICIT NONE
+ 
++      INTEGER, PARAMETER :: sp = KIND(1.0)
++
+       integer ierr, cgfile, cgbase, cgzone, cgcoord
+       integer dim, csub, nsub
+       integer(cgsize_t) i, j, k, n, size(9)
+       integer(cgsize_t) ptrange(6), ptlist(125), npts
+       integer(cgenum_t) loc, ptype
+       integer bclen, gclen
+-      real(kind=4) x(125), y(125), z(125)
++      real(kind=sp) x(125), y(125), z(125)
+       character(len=32) sname, cname
+ 
+ ! open and write base
+diff --git a/src/tests/cgwrite_f03.F90 b/src/tests/cgwrite_f03.F90
+index 9f8096f8..419747ad 100644
+--- a/src/tests/cgwrite_f03.F90
++++ b/src/tests/cgwrite_f03.F90
+@@ -16,6 +16,7 @@ program write_cgns_1
+       parameter (Ndim = 3)
+       INTEGER :: one
+       parameter (one = 1)
++      INTEGER, PARAMETER :: sp = KIND(1.0)
+ 
+       INTEGER :: index_dim, cell_dim, phys_dim
+       integer :: base_no, zone_no, coord_no, sol_no, discr_no, conn_no
+@@ -29,7 +30,7 @@ program write_cgns_1
+       INTEGER(CGSIZE_T) :: pnts(Ndim,120), donor_pnts(Ndim,120)
+       integer transform(Ndim)
+       INTEGER :: nptsets, nrmlistflag
+-      real(kind=4) data(120), normals(360)
++      real(kind=sp) data(120), normals(360)
+       double precision Dxyz(120), values(120)
+       character(len=32) zonename, solname, fieldname
+       character(len=32) coordname(Ndim)
+diff --git a/src/tests/cgzconn_f03.F90 b/src/tests/cgzconn_f03.F90
+index eaf1e1fb..106dd655 100644
+--- a/src/tests/cgzconn_f03.F90
++++ b/src/tests/cgzconn_f03.F90
+@@ -6,6 +6,8 @@ program cgzconn
+       USE CGNS
+       IMPLICIT NONE
+ 
++      INTEGER, PARAMETER :: sp = KIND(1.0)
++
+       INTEGER ierr, cgfile, cgbase, cgzone, cgcoord, cgconn
+       INTEGER dim
+       INTEGER nzconn, nconn
+@@ -17,7 +19,7 @@ program cgzconn
+       INTEGER(cgsize_t) npts
+       INTEGER(cgenum_t) loc, type,  ptype, dztype, dptype, ddtype
+       INTEGER(cgsize_t) dnpts
+-      real(kind=4) x(125), y(125), z(125), exp(5)
++      real(kind=sp) x(125), y(125), z(125), exp(5)
+       character(len=32) zname, dname, cname
+ 
+ ! open and write base
+diff --git a/src/tests/test_bboxf.F90 b/src/tests/test_bboxf.F90
+index 61ae38a6..c4dc517e 100644
+--- a/src/tests/test_bboxf.F90
++++ b/src/tests/test_bboxf.F90
+@@ -5,12 +5,14 @@ program testbboxf
+ #endif
+       USE CGNS
+       implicit none
+-
++      INTEGER, PARAMETER :: sp = KIND(1.0)
++      INTEGER, PARAMETER :: dp = KIND(1.d0)
++      
+       integer, parameter :: celldim = 3, physdim = 3
+       integer, parameter :: NUM_SIDE = 5
+ 
+-      real(kind=4), dimension(NUM_SIDE*NUM_SIDE*NUM_SIDE) :: coord
+-      real(kind=8), dimension(3, 2) :: bbox
++      real(kind=sp), dimension(NUM_SIDE*NUM_SIDE*NUM_SIDE) :: coord
++      real(kind=dp), dimension(3, 2) :: bbox
+ 
+       integer :: n
+       integer :: ierr
+diff --git a/src/tests/test_family_treef.F90 b/src/tests/test_family_treef.F90
+index 2fd2d773..4cc10718 100644
+--- a/src/tests/test_family_treef.F90
++++ b/src/tests/test_family_treef.F90
+@@ -6,6 +6,7 @@ program testfamilytreef
+       USE CGNS
+       implicit none
+ 
++      INTEGER, PARAMETER :: sp = KIND(1.0)
+       integer, parameter :: NUM_SIDE = 5
+ 
+       integer(cgsize_t) :: sizes(9)
+@@ -13,16 +14,16 @@ program testfamilytreef
+       integer(cgsize_t) :: npts
+       integer :: celldim, physdim
+ 
+-      real(kind=4), dimension(NUM_SIDE*NUM_SIDE*NUM_SIDE) :: xcoord
+-      real(kind=4), dimension(NUM_SIDE*NUM_SIDE*NUM_SIDE) :: ycoord
+-      real(kind=4), dimension(NUM_SIDE*NUM_SIDE*NUM_SIDE) :: zcoord
++      real(kind=sp), dimension(NUM_SIDE*NUM_SIDE*NUM_SIDE) :: xcoord
++      real(kind=sp), dimension(NUM_SIDE*NUM_SIDE*NUM_SIDE) :: ycoord
++      real(kind=sp), dimension(NUM_SIDE*NUM_SIDE*NUM_SIDE) :: zcoord
+ 
+       integer :: ierr
+       integer :: i, j, k, n, nfam, nb, ng, nnames
+       integer :: cgfile, cgbase, cgtree, cgzone, cgfam, cgcoord
+       integer :: cgbc, cgsr
+ 
+-      real(kind=4), dimension(5) :: exponents
++      real(kind=sp), dimension(5) :: exponents
+       character(len=32) outfile
+       character(len=32) name
+       character(len=32) tname
+diff --git a/src/tests/test_general_rindf.F90 b/src/tests/test_general_rindf.F90
+index 1af3d5fb..fdab2add 100644
+--- a/src/tests/test_general_rindf.F90
++++ b/src/tests/test_general_rindf.F90
+@@ -5,6 +5,8 @@ program testgeneralrindf
+ #endif
+       USE CGNS
+       implicit none
++      
++      INTEGER, PARAMETER :: sp = KIND(1.0)
+ 
+       integer, parameter :: celldim = 3, physdim = 3
+       integer(cgsize_t), parameter :: size(3,3) = &
+@@ -28,8 +30,8 @@ program testgeneralrindf
+       integer(cgsize_t) :: rmin(3), rmax(3)
+       integer(cgsize_t) :: m_rmin(3), m_rmax(3)
+ 
+-      real(kind=4), dimension(NUM_I, NUM_J, NUM_K) :: xcoord, ycoord, zcoord
+-      real(kind=4), dimension(NUM_I, NUM_J, NUM_K) :: solution, fbuf
++      real(kind=sp), dimension(NUM_I, NUM_J, NUM_K) :: xcoord, ycoord, zcoord
++      real(kind=sp), dimension(NUM_I, NUM_J, NUM_K) :: solution, fbuf
+ 
+       character(len=32) coordname(3)
+       character(len=32) fieldname
+
+From d9bb4f6f0f2dc1f38222d4212d9c7daed8fb3f24 Mon Sep 17 00:00:00 2001
+From: Scot Breitenfeld <brtnfld@hdfgroup.org>
+Date: Thu, 23 Jul 2020 14:02:24 -0500
+Subject: [PATCH 7/9] fixed types with assumption KIND=byte
+
+---
+ src/cgns_f.F90              |  4 ++--
+ src/tests/cgread_f03.F90    | 26 +++++++++++++-------------
+ src/tests/test_complexf.F90 | 10 ++++++----
+ 3 files changed, 21 insertions(+), 19 deletions(-)
+
+diff --git a/src/cgns_f.F90 b/src/cgns_f.F90
+index e020a0e8..8275cf59 100644
+--- a/src/cgns_f.F90
++++ b/src/cgns_f.F90
+@@ -5181,7 +5181,7 @@ SUBROUTINE cg_goto_f(fn, B, ier, &
+      ELSE
+         RETURN
+      END IF
+-  END SUBROUTINE
++  END SUBROUTINE cg_goto_f
+ 
+   SUBROUTINE cg_gorel_f(fn, ier, &
+           UserDataName1, i1, UserDataName2, i2, &
+@@ -5307,7 +5307,7 @@ SUBROUTINE cg_gorel_f(fn, ier, &
+      ELSE
+         RETURN
+      END IF
+-  END SUBROUTINE
++  END SUBROUTINE cg_gorel_f
+ 
+   FUNCTION cg_get_type_c_int(a)
+     USE ISO_C_BINDING
+diff --git a/src/tests/cgread_f03.F90 b/src/tests/cgread_f03.F90
+index 58fc8ef9..a1def5b0 100644
+--- a/src/tests/cgread_f03.F90
++++ b/src/tests/cgread_f03.F90
+@@ -81,8 +81,8 @@ PROGRAM read_cgns_1
+   PARAMETER (one = 1)
+ 
+   ! *** open file
+-  !	write(6,*) 'Input filename'
+-  !	read(5,600) filename
++  !     write(6,*) 'Input filename'
++  !     read(5,600) filename
+   WRITE(filename,'(a)')'cgtest.cgns'
+ 
+   ! *** check if the file is CGNS
+@@ -222,7 +222,7 @@ PROGRAM read_cgns_1
+            IF (ier.EQ.ALL_OK)WRITE(6,103)'   Diffusion model=', &
+                 (diffusion_model(i), i=1,6)
+         ENDIF       ! If Governing Equations are defined
+-     ENDIF		! If FlowEquationSet_t exists under CGNSBase_t
++     ENDIF          ! If FlowEquationSet_t exists under CGNSBase_t
+ 
+ 
+      WRITE(6,400)'                              *     *     *'
+@@ -611,7 +611,7 @@ PROGRAM read_cgns_1
+                       AngleUnitsName(deg)
+               ENDIF
+ 
+-           ENDDO	! loop through DataArray_t
++           ENDDO     ! loop through DataArray_t
+            WRITE(6,103)' '
+ 
+            ! *** Reading solution data with solution specific functions:
+@@ -652,7 +652,7 @@ PROGRAM read_cgns_1
+               IF (ier .EQ. ERROR) CALL cg_error_exit_f
+            ENDDO                             ! field loop
+ 
+-        ENDDO	! loop through FlowSolution_t
++        ENDDO     ! loop through FlowSolution_t
+ 
+         WRITE(6,400)'                             *     *     *'
+ 
+@@ -724,7 +724,7 @@ PROGRAM read_cgns_1
+                       TemperatureUnitsName(temp), TimeUnitsName(time), &
+                       AngleUnitsName(deg)
+               ENDIF
+-           ENDDO		! loop through DataArray_t
++           ENDDO          ! loop through DataArray_t
+         ENDDO
+ 
+         WRITE(6,400)'                             *     *     *'
+@@ -787,7 +787,7 @@ PROGRAM read_cgns_1
+                  WRITE(6,500) '     DescriptorName="',TRIM(name),'"', &
+                       '     DescriptorText="',TRIM(text),'"'
+               ENDDO
+-           ENDDO	!hole loop
++           ENDDO     !hole loop
+ 
+ 
+ 
+@@ -1126,12 +1126,12 @@ PROGRAM read_cgns_1
+                                (data_double(n),n=1,num)
+                        ENDIF
+ 
+-                    ENDDO	! loop through DataArray
+-                 ENDIF		! if Neumann
+-              ENDDO		! loop through dataset
+-           ENDDO		! loop through boco
+-        ENDIF		        ! if ZoneBC_t exists
+-     ENDDO			! zone loop
++                    ENDDO     ! loop through DataArray
++                 ENDIF          ! if Neumann
++              ENDDO          ! loop through dataset
++           ENDDO          ! loop through boco
++        ENDIF                  ! if ZoneBC_t exists
++     ENDDO               ! zone loop
+ 
+      WRITE(6,400)'                             *     *     *'
+ 
+
+From c4433b3bbf49562b31b59b8103679051b4fe38ff Mon Sep 17 00:00:00 2001
+From: Scot Breitenfeld <brtnfld@hdfgroup.org>
+Date: Fri, 24 Jul 2020 00:09:00 -0500
+Subject: [PATCH 8/9] simplified the IF statements in cg_goto_f and cg_gorel_f
+
+---
+ src/cgns_f.F90 | 215 ++++++++++++++++++++-----------------------------
+ 1 file changed, 88 insertions(+), 127 deletions(-)
+
+diff --git a/src/cgns_f.F90 b/src/cgns_f.F90
+index 8275cf59..396111a0 100644
+--- a/src/cgns_f.F90
++++ b/src/cgns_f.F90
+@@ -5053,21 +5053,19 @@ END SUBROUTINE cgio_set_label_f
+ !!$
+ !!$    END INTERFACE
+ 
+-
+-
+ CONTAINS
+   SUBROUTINE cg_goto_f(fn, B, ier, &
+-          UserDataName1, i1, UserDataName2, i2, &
+-          UserDataName3, i3, UserDataName4, i4, &
+-          UserDataName5, i5, UserDataName6, i6, &
+-          UserDataName7, i7, UserDataName8, i8, &
+-          UserDataName9, i9, UserDataName10, i10, &
+-          UserDataName11, i11, UserDataName12, i12, &
+-          UserDataName13, i13, UserDataName14, i14, &
+-          UserDataName15, i15, UserDataName16, i16, &
+-          UserDataName17, i17, UserDataName18, i18, &
+-          UserDataName19, i19, UserDataName20, i20, &
+-          end)
++       UserDataName1, i1, UserDataName2, i2, &
++       UserDataName3, i3, UserDataName4, i4, &
++       UserDataName5, i5, UserDataName6, i6, &
++       UserDataName7, i7, UserDataName8, i8, &
++       UserDataName9, i9, UserDataName10, i10, &
++       UserDataName11, i11, UserDataName12, i12, &
++       UserDataName13, i13, UserDataName14, i14, &
++       UserDataName15, i15, UserDataName16, i16, &
++       UserDataName17, i17, UserDataName18, i18, &
++       UserDataName19, i19, UserDataName20, i20, &
++       end)
+      IMPLICIT NONE
+      INTEGER, INTENT(IN) :: fn
+      INTEGER, INTENT(IN) :: B
+@@ -5085,101 +5083,83 @@ SUBROUTINE cg_goto_f(fn, B, ier, &
+         RETURN
+      ELSE
+         CALL cg_goto_f1(fn, B, ier, UserDataName1, i1)
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i2))) THEN
++     IF (PRESENT(i2)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName2, i2)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i3))) THEN
++     IF (PRESENT(i3)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName3, i3)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i4))) THEN
++     IF (PRESENT(i4)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName4, i4)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i5))) THEN
++     IF (PRESENT(i5)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName5, i5)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i6))) THEN
++     IF (PRESENT(i6)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName6, i6)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i7))) THEN
++     IF (PRESENT(i7)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName7, i7)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i8))) THEN
++     IF (PRESENT(i8)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName8, i8)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i9))) THEN
++     IF (PRESENT(i9)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName9, i9)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i10))) THEN
++     IF (PRESENT(i10)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName10, i10)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i11))) THEN
++     IF (PRESENT(i11)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName11, i11)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i12))) THEN
++     IF (PRESENT(i12)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName12, i12)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i13))) THEN
++     IF (PRESENT(i13)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName13, i13)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i14))) THEN
++     IF (PRESENT(i14)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName14, i14)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i15))) THEN
++     IF (PRESENT(i15)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName15, i15)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i16))) THEN
++     IF (PRESENT(i16)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName16, i16)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i17))) THEN
++     IF (PRESENT(i17)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName17, i17)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i18))) THEN
++     IF (PRESENT(i18)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName18, i18)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i19))) THEN
++     IF (PRESENT(i19)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName19, i19)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i20))) THEN
++     IF (PRESENT(i20)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName20, i20)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+   END SUBROUTINE cg_goto_f
+ 
+@@ -5212,100 +5192,81 @@ SUBROUTINE cg_gorel_f(fn, ier, &
+         CALL cg_gorel_f1(fn, ier, UserDataName1, 0)
+         RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i2))) THEN
++     IF (PRESENT(i2)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName2, i2)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i3))) THEN
++     IF (PRESENT(i3)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName3, i3)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i4))) THEN
++     IF (PRESENT(i4)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName4, i4)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i5))) THEN
++     IF (PRESENT(i5)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName5, i5)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i6))) THEN
++     IF (PRESENT(i6)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName6, i6)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i7))) THEN
++     IF (PRESENT(i7)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName7, i7)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i8))) THEN
++     IF (PRESENT(i8)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName8, i8)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i9))) THEN
++     IF (PRESENT(i9)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName9, i9)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i10))) THEN
++     IF (PRESENT(i10)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName10, i10)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i11))) THEN
++     IF (PRESENT(i11)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName11, i11)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i12))) THEN
++     IF (PRESENT(i12)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName12, i12)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i13))) THEN
++     IF (PRESENT(i13)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName13, i13)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i14))) THEN
++     IF (PRESENT(i14)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName14, i14)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i15))) THEN
++     IF (PRESENT(i15)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName15, i15)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i16))) THEN
++     IF (PRESENT(i16)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName16, i16)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i17))) THEN
++     IF (PRESENT(i17)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName17, i17)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i18))) THEN
++     IF (PRESENT(i18)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName18, i18)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i19))) THEN
++     IF (PRESENT(i19)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName19, i19)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+-     IF ((ier .EQ. 0) .AND. (PRESENT(i20))) THEN
++     IF (PRESENT(i20)) THEN
+         CALL cg_gorel_f1(fn, ier, UserDataName20, i20)
+-     ELSE
+-        RETURN
++        IF(ier .NE. 0) RETURN
+      END IF
+   END SUBROUTINE cg_gorel_f
+ 
+
+From e3823be599e3f62c5ec7d5d1d4a1b3f47a3daa6e Mon Sep 17 00:00:00 2001
+From: Scot Breitenfeld <brtnfld@hdfgroup.org>
+Date: Wed, 23 Sep 2020 23:30:44 -0500
+Subject: [PATCH 9/9] added error checks and cg_goto_f
+
+---
+ src/tests/test_family_treef.F90 | 35 ++++++++++++++++++++++++++++++++-
+ 1 file changed, 34 insertions(+), 1 deletion(-)
+
+diff --git a/src/tests/test_family_treef.F90 b/src/tests/test_family_treef.F90
+index 4cc10718..e37aa467 100644
+--- a/src/tests/test_family_treef.F90
++++ b/src/tests/test_family_treef.F90
+@@ -88,9 +88,14 @@ program testfamilytreef
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_coord_write_f(cgfile, cgbase, cgzone, RealSingle, &
+      &       "CoordinateZ", zcoord, cgcoord, ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
++      call cg_goto_f(cgfile, cgbase, ierr, "Zone_t", cgzone, &
++     &       "GridCoordinates_t", 1, &
++     &       "CoordinateX", 0, 'end')
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_gopath_f(cgfile,                                  &
+      &    "/Structured/Zone/GridCoordinates/CoordinateX", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_exponents_write_f(RealSingle, exponents, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_gopath_f(cgfile, "../CoordinateY", ierr)
+@@ -150,11 +155,16 @@ program testfamilytreef
+ ! NODE BASED FAMILY NODE CREATION
+ 
+       call cg_gopath_f( cgfile, "/FamilyTree/Family2", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_node_family_write_f( "Family2.1", cgfam, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+ 
++      call cg_goto_f( cgfile, cgtree, ierr, "Family2", 0, &
++     &               "Family2.1", 0, 'end')
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_gopath_f(cgfile, &
+      &        "/FamilyTree/Family1/Family1.2/Family1.2.1", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_node_family_write_f( "Family1.2.1.1", cgfam, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+ 
+@@ -165,6 +175,7 @@ program testfamilytreef
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+       
+       call cg_gopath_f( cgfile, "/FamilyTree/Family2/Family2.1", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_node_family_write_f( "Family2.1.1", cgfam, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f      
+ 
+@@ -185,14 +196,19 @@ program testfamilytreef
+      &                  "/FamilyTree/Family4/Family4.3", cgfam, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+ 
+-
++      CALL cg_goto_f(cgfile, cgtree, ierr, 'end')
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_gopath_f(cgfile, "/FamilyTree", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_node_family_write_f( "FamilyN", cgfam, ierr) 
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+ 
+ !  FAMILY (TREE) NAME CREATION
+ 
++      call cg_goto_f(cgfile, cgbase, ierr, "Zone", 0, 'end')
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_gopath_f(cgfile, "/Structured/Zone", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_famname_write_f("/FamilyTree/Family1", ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+       do j=1,3
+@@ -210,8 +226,12 @@ program testfamilytreef
+       npts = 2
+       call cg_boco_write_f(cgfile, cgbase, 1, "Inflow", BCInflow, &
+      &            PointRange, npts, ptrange, cgbc, ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
++      call cg_goto_f(cgfile, cgbase, ierr, "Zone", 0, "ZoneBC", 0, &
++     &               "Inflow", 0,'end')
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_gopath_f(cgfile, "/Structured/Zone/ZoneBC/Inflow", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+ 
+       call cg_famname_write_f("/FamilyTree/Family2", ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+@@ -226,7 +246,11 @@ program testfamilytreef
+       call cg_subreg_bcname_write_f(cgfile, cgbase, cgzone, "SubRegion", &
+      &       2, "Inflow", cgsr, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
++
++      call cg_goto_f(cgfile, cgbase, ierr, "Zone", 0, "SubRegion", 0, 'end')
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_gopath_f(cgfile, "/Structured/Zone/SubRegion", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_famname_write_f("/FamilyTree/Family3", ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f     
+       do j = 1,3
+@@ -237,11 +261,13 @@ program testfamilytreef
+       enddo
+ 
+       call cg_gopath_f(cgfile, "/Structured/Zone", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_user_data_write_f("UserData", ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_user_data_write_f("UserData2", ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_gopath_f(cgfile, "./UserData", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_famname_write_f("/FamilyTree/Family4", ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+       do j = 1,3
+@@ -299,8 +325,10 @@ program testfamilytreef
+ !  FAMILY NODE DELETION
+ 
+       call cg_gopath_f(cgfile,"/FamilyTree/Family1/Family1.2/Family1.2.1", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+ 
+       call cg_gopath_f(cgfile, "/FamilyTree/Family1/Family1.2/Family1.2.1", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+ 
+       call cg_delete_node_f("Family1.2.1.1", ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+@@ -310,6 +338,7 @@ program testfamilytreef
+       if (nfam .ne. 1) stop
+ 
+       call cg_gopath_f(cgfile, "/FamilyTree/Family4", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_delete_node_f("Family4.2", ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+ 
+@@ -319,6 +348,7 @@ program testfamilytreef
+ 
+ !  FAMILY NODE OVERWRITING
+       call cg_gopath_f( cgfile, "/FamilyTree/Family1/Family1.2/Family1.2.1", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_node_family_write_f( "Family1.2.1.2", cgfam, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f 
+       call cg_node_nfamilies_f(nfam, ierr)
+@@ -326,6 +356,7 @@ program testfamilytreef
+       if (nfam .ne. 1) stop 
+ 
+       call cg_gopath_f( cgfile, "/FamilyTree/Family1/Family1.1", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+       call cg_node_nfamilies_f( nfam, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+       if (nfam .ne. 1) stop 
+@@ -370,6 +401,7 @@ program testfamilytreef
+       enddo
+  
+       call cg_gopath_f( cgfile, "/Structured/Zone/UserData", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+ 
+       call cg_nmultifam_f( nnames, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+@@ -377,6 +409,7 @@ program testfamilytreef
+       if (ierr .ne. CG_OK) call cg_error_exit_f
+ 
+       call cg_gopath_f(cgfile, "/Structured/Zone/UserData2", ierr)
++      if (ierr .ne. CG_OK) call cg_error_exit_f
+ 
+       call cg_nmultifam_f( nnames, ierr)
+       if (ierr .ne. CG_OK) call cg_error_exit_f

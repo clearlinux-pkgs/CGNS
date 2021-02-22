@@ -164,6 +164,8 @@ libcgns.so.4.1:__cgns_MOD_cg_get_type_c_double
 libcgns.so.4.1:__cgns_MOD_cg_get_type_c_float
 libcgns.so.4.1:__cgns_MOD_cg_get_type_c_int
 libcgns.so.4.1:__cgns_MOD_cg_get_type_c_long_long
+libcgns.so.4.1:__cgns_MOD_cg_gorel_f
+libcgns.so.4.1:__cgns_MOD_cg_goto_f
 libcgns.so.4.1:cg_1to1_average_read
 libcgns.so.4.1:cg_1to1_average_read_f
 libcgns.so.4.1:cg_1to1_average_write
@@ -430,9 +432,11 @@ libcgns.so.4.1:cg_gopath
 libcgns.so.4.1:cg_gopath_f_
 libcgns.so.4.1:cg_gorel
 libcgns.so.4.1:cg_gorel_f08
+libcgns.so.4.1:cg_gorel_f1_
 libcgns.so.4.1:cg_gorel_f_
 libcgns.so.4.1:cg_goto
 libcgns.so.4.1:cg_goto_f08
+libcgns.so.4.1:cg_goto_f1_
 libcgns.so.4.1:cg_goto_f_
 libcgns.so.4.1:cg_governing_read
 libcgns.so.4.1:cg_governing_read_f

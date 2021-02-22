@@ -1,0 +1,1 @@
+export FFLAGS="$FFLAGS -fallow-argument-mismatch"
