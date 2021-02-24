@@ -4,7 +4,7 @@
 #
 Name     : CGNS
 Version  : 4.1.2
-Release  : 6
+Release  : 7
 URL      : https://github.com/CGNS/CGNS/archive/v4.1.2/CGNS-4.1.2.tar.gz
 Source0  : https://github.com/CGNS/CGNS/archive/v4.1.2/CGNS-4.1.2.tar.gz
 Summary  : No detailed summary available
@@ -17,7 +17,7 @@ Requires: CGNS-openmpi = %{version}-%{release}
 BuildRequires : buildreq-cmake
 BuildRequires : glu-dev
 BuildRequires : hdf5-dev
-BuildRequires : libX11-dev libICE-dev libSM-dev libXau-dev libXcomposite-dev libXcursor-dev libXdamage-dev libXdmcp-dev libXext-dev libXfixes-dev libXft-dev libXi-dev libXinerama-dev libXi-dev libXmu-dev libXpm-dev libXrandr-dev libXrender-dev libXres-dev libXScrnSaver-dev libXt-dev libXtst-dev libXv-dev libXxf86misc-dev libXxf86vm-dev
+BuildRequires : libX11-dev libICE-dev libSM-dev libXau-dev libXcomposite-dev libXcursor-dev libXdamage-dev libXdmcp-dev libXext-dev libXfixes-dev libXft-dev libXi-dev libXinerama-dev libXi-dev libXmu-dev libXpm-dev libXrandr-dev libXrender-dev libXres-dev libXScrnSaver-dev libXt-dev libXtst-dev libXv-dev libXxf86vm-dev
 BuildRequires : libXmu-dev
 BuildRequires : modules
 BuildRequires : openmpi-dev
@@ -93,7 +93,7 @@ export http_proxy=http://127.0.0.1:9/
 export https_proxy=http://127.0.0.1:9/
 export no_proxy=localhost,127.0.0.1,0.0.0.0
 export LANG=C.UTF-8
-export SOURCE_DATE_EPOCH=1613963650
+export SOURCE_DATE_EPOCH=1614194556
 mkdir -p clr-build
 pushd clr-build
 export GCC_IGNORE_WERROR=1
@@ -164,7 +164,7 @@ make test
 module unload openmpi
 
 %install
-export SOURCE_DATE_EPOCH=1613963650
+export SOURCE_DATE_EPOCH=1614194556
 rm -rf %{buildroot}
 mkdir -p %{buildroot}/usr/share/package-licenses/CGNS
 cp %{_builddir}/CGNS-4.1.2/license.txt %{buildroot}/usr/share/package-licenses/CGNS/1be7ca6b47850de97d2dd5cab74d22620d017274
