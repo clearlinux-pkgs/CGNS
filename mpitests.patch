@@ -1,6 +1,8 @@
---- a/src/ptests/CMakeLists.txt-org	2020-04-05 14:18:11.779643000 -0700
-+++ b/src/ptests/CMakeLists.txt	2020-04-05 14:21:07.300251264 -0700
-@@ -69,36 +69,36 @@
+diff --git a/src/ptests/CMakeLists.txt b/src/ptests/CMakeLists.txt
+index d675c34..530c27a 100644
+--- a/src/ptests/CMakeLists.txt
++++ b/src/ptests/CMakeLists.txt
+@@ -77,42 +77,42 @@ endif (CGNS_ENABLE_FORTRAN AND HAVE_FORTRAN_2003)
  
  # Add the tests so that cmake can find them
  if (CGNS_ENABLE_TESTS)
@@ -16,6 +18,9 @@
 -  add_test(benchmark_hdf5 ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} "2"
 +  add_test(benchmark_hdf5 ${MPIEXEC} -x LD_LIBRARY_PATH ${MPIEXEC_NUMPROC_FLAG} "2"
        ${MPIEXEC_PREFLAGS} ./benchmark_hdf5 ${MPIEXEC_POSTFLAGS})
+-  add_test(Metadata_Stressing ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} "2"
++  add_test(Metadata_Stressing ${MPIEXEC} -x LD_LIBRARY_PATH ${MPIEXEC_NUMPROC_FLAG} "2"
+       ${MPIEXEC_PREFLAGS} ./Metadata_Stressing ${MPIEXEC_POSTFLAGS})
 -  add_test(open_close ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} "2"
 +  add_test(open_close ${MPIEXEC} -x LD_LIBRARY_PATH ${MPIEXEC_NUMPROC_FLAG} "2"
        ${MPIEXEC_PREFLAGS} ./open_close ${MPIEXEC_POSTFLAGS})
@@ -37,6 +42,9 @@
 -  add_test(test_general_readwrite ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} "2"
 +  add_test(test_general_readwrite ${MPIEXEC} -x LD_LIBRARY_PATH ${MPIEXEC_NUMPROC_FLAG} "2"
        ${MPIEXEC_PREFLAGS} ./test_general_readwrite ${MPIEXEC_POSTFLAGS})
+-  add_test(test_poly_unstructured ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} "2"
++  add_test(test_poly_unstructured ${MPIEXEC} -x LD_LIBRARY_PATH ${MPIEXEC_NUMPROC_FLAG} "2"
+       ${MPIEXEC_PREFLAGS} ./test_poly_unstructured ${MPIEXEC_POSTFLAGS})
 -  add_test(thesis_benchmark ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} "2"
 +  add_test(thesis_benchmark ${MPIEXEC} -x LD_LIBRARY_PATH ${MPIEXEC_NUMPROC_FLAG} "2"
        ${MPIEXEC_PREFLAGS} ./thesis_benchmark ${MPIEXEC_POSTFLAGS})
@@ -50,5 +58,8 @@
 -    add_test(benchmark_hdf5_f90 ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} "2"
 +    add_test(benchmark_hdf5_f90 ${MPIEXEC} -x LD_LIBRARY_PATH ${MPIEXEC_NUMPROC_FLAG} "2"
          ${MPIEXEC_PREFLAGS} ./benchmark_hdf5_f90 ${MPIEXEC_POSTFLAGS})
+-    add_test(test_mixed_par_ser ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} "2"
++    add_test(test_mixed_par_ser ${MPIEXEC} -x LD_LIBRARY_PATH ${MPIEXEC_NUMPROC_FLAG} "2"
+         ${MPIEXEC_PREFLAGS} ./test_mixed_par_ser ${MPIEXEC_POSTFLAGS})
    endif (CGNS_ENABLE_FORTRAN  AND HAVE_FORTRAN_2003)
  endif (CGNS_ENABLE_TESTS)
