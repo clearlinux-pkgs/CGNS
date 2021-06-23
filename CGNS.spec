@@ -4,7 +4,7 @@
 #
 Name     : CGNS
 Version  : 4.2.0
-Release  : 8
+Release  : 9
 URL      : https://github.com/CGNS/CGNS/archive/v4.2.0/CGNS-4.2.0.tar.gz
 Source0  : https://github.com/CGNS/CGNS/archive/v4.2.0/CGNS-4.2.0.tar.gz
 Summary  : No detailed summary available
