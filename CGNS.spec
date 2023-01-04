@@ -4,7 +4,7 @@
 #
 Name     : CGNS
 Version  : 4.2.0
-Release  : 9
+Release  : 10
 URL      : https://github.com/CGNS/CGNS/archive/v4.2.0/CGNS-4.2.0.tar.gz
 Source0  : https://github.com/CGNS/CGNS/archive/v4.2.0/CGNS-4.2.0.tar.gz
 Summary  : No detailed summary available
@@ -24,6 +24,9 @@ BuildRequires : openmpi-dev
 BuildRequires : openssh
 BuildRequires : tk-dev
 BuildRequires : zlib-dev
+# Suppress stripping binaries
+%define __strip /bin/true
+%define debug_package %{nil}
 Patch1: mpitests.patch
 
 %description
@@ -91,17 +94,17 @@ export http_proxy=http://127.0.0.1:9/
 export https_proxy=http://127.0.0.1:9/
 export no_proxy=localhost,127.0.0.1,0.0.0.0
 export LANG=C.UTF-8
-export SOURCE_DATE_EPOCH=1620328878
+export SOURCE_DATE_EPOCH=1672863145
 mkdir -p clr-build
 pushd clr-build
 export GCC_IGNORE_WERROR=1
 export AR=gcc-ar
 export RANLIB=gcc-ranlib
 export NM=gcc-nm
-export CFLAGS="$CFLAGS -O3 -ffat-lto-objects -flto=4 "
-export FCFLAGS="$FFLAGS -O3 -ffat-lto-objects -flto=4 "
-export FFLAGS="$FFLAGS -O3 -ffat-lto-objects -flto=4 "
-export CXXFLAGS="$CXXFLAGS -O3 -ffat-lto-objects -flto=4 "
+export CFLAGS="$CFLAGS -O3 -fdebug-types-section -femit-struct-debug-baseonly -ffat-lto-objects -flto=auto -g1 -gno-column-info -gno-variable-location-views -gz "
+export FCFLAGS="$FFLAGS -O3 -fdebug-types-section -femit-struct-debug-baseonly -ffat-lto-objects -flto=auto -g1 -gno-column-info -gno-variable-location-views -gz "
+export FFLAGS="$FFLAGS -O3 -fdebug-types-section -femit-struct-debug-baseonly -ffat-lto-objects -flto=auto -g1 -gno-column-info -gno-variable-location-views -gz "
+export CXXFLAGS="$CXXFLAGS -O3 -fdebug-types-section -femit-struct-debug-baseonly -ffat-lto-objects -flto=auto -g1 -gno-column-info -gno-variable-location-views -gz "
 %cmake .. -DCMAKE_SKIP_INSTALL_RPATH:BOOL=ON \
 -DCGNS_ENABLE_PARALLEL:BOOL=OFF \
 -DCGNS_ENABLE_HDF5:BOOL=ON \
@@ -124,14 +127,14 @@ export GCC_IGNORE_WERROR=1
 export AR=gcc-ar
 export RANLIB=gcc-ranlib
 export NM=gcc-nm
-export CFLAGS="$CFLAGS -O3 -ffat-lto-objects -flto=4 -march=haswell "
-export FCFLAGS="$FFLAGS -O3 -ffat-lto-objects -flto=4 -march=haswell "
-export FFLAGS="$FFLAGS -O3 -ffat-lto-objects -flto=4 -march=haswell "
-export CXXFLAGS="$CXXFLAGS -O3 -ffat-lto-objects -flto=4 -march=haswell "
-export CFLAGS="$CFLAGS -march=haswell -m64"
-export CXXFLAGS="$CXXFLAGS -march=haswell -m64"
-export FCFLAGS="$FCFLAGS -march=haswell -m64"
-export FFLAGS="$FFLAGS -march=haswell -m64"
+export CFLAGS="$CFLAGS -O3 -Wl,-z,x86-64-v3 -fdebug-types-section -femit-struct-debug-baseonly -ffat-lto-objects -flto=auto -g1 -gno-column-info -gno-variable-location-views -gz -march=x86-64-v3 "
+export FCFLAGS="$FFLAGS -O3 -Wl,-z,x86-64-v3 -fdebug-types-section -femit-struct-debug-baseonly -ffat-lto-objects -flto=auto -g1 -gno-column-info -gno-variable-location-views -gz -march=x86-64-v3 "
+export FFLAGS="$FFLAGS -O3 -Wl,-z,x86-64-v3 -fdebug-types-section -femit-struct-debug-baseonly -ffat-lto-objects -flto=auto -g1 -gno-column-info -gno-variable-location-views -gz -march=x86-64-v3 "
+export CXXFLAGS="$CXXFLAGS -O3 -Wl,-z,x86-64-v3 -fdebug-types-section -femit-struct-debug-baseonly -ffat-lto-objects -flto=auto -g1 -gno-column-info -gno-variable-location-views -gz -march=x86-64-v3 "
+export CFLAGS="$CFLAGS -march=x86-64-v3 -m64 -Wl,-z,x86-64-v3"
+export CXXFLAGS="$CXXFLAGS -march=x86-64-v3 -m64 -Wl,-z,x86-64-v3"
+export FCFLAGS="$FCFLAGS -march=x86-64-v3 -m64 -Wl,-z,x86-64-v3"
+export FFLAGS="$FFLAGS -march=x86-64-v3 -m64"
 cmake -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX=$MPI_ROOT -DCMAKE_INSTALL_SBINDIR=$MPI_BIN \
 -DCMAKE_INSTALL_LIBDIR=$MPI_LIB -DCMAKE_INSTALL_INCLUDEDIR=$MPI_INCLUDE -DLIB_INSTALL_DIR=$MPI_LIB \
 -DBUILD_SHARED_LIBS:BOOL=ON -DLIB_SUFFIX=64 \
@@ -162,12 +165,12 @@ make test
 module unload openmpi
 
 %install
-export SOURCE_DATE_EPOCH=1620328878
+export SOURCE_DATE_EPOCH=1672863145
 rm -rf %{buildroot}
 mkdir -p %{buildroot}/usr/share/package-licenses/CGNS
-cp %{_builddir}/CGNS-4.2.0/license.txt %{buildroot}/usr/share/package-licenses/CGNS/f780297d8a4c3457ad613e1170894b5de854b4d3
-cp %{_builddir}/CGNS-4.2.0/src/LICENSE %{buildroot}/usr/share/package-licenses/CGNS/f780297d8a4c3457ad613e1170894b5de854b4d3
-cp %{_builddir}/CGNS-4.2.0/src/cgnstools/LICENSE %{buildroot}/usr/share/package-licenses/CGNS/a429c0e28adfbea645b03002dacff5f40d46da4c
+cp %{_builddir}/CGNS-%{version}/license.txt %{buildroot}/usr/share/package-licenses/CGNS/f780297d8a4c3457ad613e1170894b5de854b4d3 || :
+cp %{_builddir}/CGNS-%{version}/src/LICENSE %{buildroot}/usr/share/package-licenses/CGNS/f780297d8a4c3457ad613e1170894b5de854b4d3 || :
+cp %{_builddir}/CGNS-%{version}/src/cgnstools/LICENSE %{buildroot}/usr/share/package-licenses/CGNS/a429c0e28adfbea645b03002dacff5f40d46da4c || :
 pushd clr-build-openmpi
 module load openmpi
 %make_install_openmpi
